@@ -59,3 +59,9 @@ print a `skip` line, instead of recreating its files or failing. Sync also drops
 the OpenCode `~/.zshenv` block once OpenCode is gone. Prompted by uninstalling
 OpenCode on 2026-11-13, which made doctor fail and sync recreate
 `~/.config/opencode/AGENTS.md`.
+
+## D12. `mcp.json` holds only servers every harness uses
+Context7 was dropped: no harness relied on it, and its missing key made every
+`bin/doctor` run warn. A server only some harnesses want is configured in that
+harness; sync only touches servers it has recorded as its own, so those entries
+are left alone. The `${secret:NAME}` mechanism (D9) stays for shared servers.

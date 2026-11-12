@@ -144,15 +144,17 @@ the permission rules are what actually enforce it.
 
 ## MCP servers and secrets
 
-`mcp.json` lists the servers: `context7`, `gh_grep` and `executor`. `bin/sync`
-renders each one into the right format for every harness.
+`mcp.json` lists the servers every harness should have: `gh_grep` and
+`executor`. `bin/sync` renders each one into the right format for every installed
+harness. A server that only some harnesses use (Context7, for example) is
+configured in that harness directly; sync leaves entries it doesn't manage alone.
 
 Secrets are written as `${secret:NAME}` and never stored in this repo. At sync
 time each value is read from the environment variable `NAME` or, failing that,
-from the macOS Keychain under service `agent-config`. To store the Context7 key:
+from the macOS Keychain under service `agent-config`. To store one:
 
 ```sh
-security add-generic-password -U -s agent-config -a CONTEXT7_API_KEY -w '<key>'
+security add-generic-password -U -s agent-config -a NAME -w '<value>'
 ~/agent-config/bin/sync
 ```
 

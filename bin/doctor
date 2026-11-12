@@ -139,7 +139,7 @@ def check_policy(log: Log) -> None:
 
 def check_mcp(log: Log) -> None:
     log.section("MCP servers")
-    servers, skipped = mcp_servers(log)
+    servers, _ = mcp_servers(log)
     names = list(servers)
     views = {}
     for home in CLAUDE_HOMES:
@@ -162,11 +162,6 @@ def check_mcp(log: Log) -> None:
             log.error(f"{who}: missing {', '.join(missing)} (run bin/sync)")
         else:
             log.ok(f"{who}: {', '.join(names)}")
-    for f in [OPENCODE / "opencode.json", PI / "mcp.json"] + [h / "config.toml" for h in CODEX_HOMES]:
-        if f.exists() and re.search(r"ctx7sk-[0-9a-f-]{8,}", f.read_text()):
-            if "context7" in skipped:
-                log.warn(f"{short(f)} still holds a plaintext Context7 key; store it in the Keychain and re-run "
-                         f"bin/sync (see README)")
 
 
 def check_repo(log: Log) -> None:
