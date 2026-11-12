@@ -7,7 +7,7 @@ disable-model-invocation: true
 # Setup repo
 
 Give one repository the files every harness and every skill in
-`~/agent-config` expects. Run it once per repo; re-run to change the tracker.
+`~/agentrc` expects. Run it once per repo; re-run to change the tracker.
 
 ## 1. Explore (read only)
 
@@ -49,7 +49,7 @@ put in it what an agent cannot discover quickly:
 <Only the non-obvious directories.>
 
 ## Conventions
-<Rules that differ from the defaults in ~/agent-config/AGENTS.md: branch/commit
+<Rules that differ from the defaults in ~/agentrc/AGENTS.md: branch/commit
 format, generated code not to edit, migration rules, env/secrets handling.>
 
 ## Agent skills

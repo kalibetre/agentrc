@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify every harness sees exactly what ~/agent-config defines. Read-only.
+"""Verify every harness sees exactly what ~/agentrc defines. Read-only.
 
 Exit code 0 when everything matches, 1 when something needs `bin/sync` or a fix.
 """
@@ -14,7 +14,7 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from agent_config import *  # noqa: E402,F403
+from agentrc import *  # noqa: E402,F403
 
 
 def check_skills(log: Log) -> dict[str, Path]:
@@ -46,7 +46,7 @@ def check_links(log: Log, found: dict[str, Path]) -> None:
                 continue
             ours = entry.is_symlink() and Path(os.readlink(entry)).parent == SKILLS
             if not ours:
-                log.error(f"{short(entry)} is not managed by agent-config (bin/sync will quarantine it)")
+                log.error(f"{short(entry)} is not managed by agentrc (bin/sync will quarantine it)")
             elif not entry.exists():
                 log.error(f"{short(entry)} is a broken link")
             names.add(entry.name)
@@ -57,7 +57,7 @@ def check_links(log: Log, found: dict[str, Path]) -> None:
             log.ok(f"{short(target)}: exactly the {len(found)} repo skills")
     for d in FORBIDDEN_SKILL_DIRS:
         if d.exists():
-            log.error(f"{short(d)} exists; skills must only come from ~/agent-config (run bin/sync)")
+            log.error(f"{short(d)} exists; skills must only come from ~/agentrc (run bin/sync)")
     if OPENCODE_HOMES and os.environ.get("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS") != "1":
         log.warn("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS is not set in this shell; OpenCode may list skills twice "
                  "(open a new shell after bin/sync)")
@@ -75,12 +75,12 @@ def check_instructions(log: Log) -> None:
         if f.is_file() and f.read_text() == CLAUDE_IMPORT:
             log.ok(f"{short(f)} imports AGENTS.md")
         else:
-            log.error(f"{short(f)} does not contain exactly '@~/agent-config/AGENTS.md'")
+            log.error(f"{short(f)} does not contain exactly '@~/agentrc/AGENTS.md'")
     for link in [h / "AGENTS.md" for h in CODEX_HOMES + OPENCODE_HOMES + PI_HOMES]:
         if link.is_symlink() and Path(os.readlink(link)) == AGENTS_MD:
             log.ok(f"{short(link)} -> AGENTS.md")
         else:
-            log.error(f"{short(link)} is not a link to ~/agent-config/AGENTS.md")
+            log.error(f"{short(link)} is not a link to ~/agentrc/AGENTS.md")
     lines = AGENTS_MD.read_text().count("\n")
     (log.ok if lines <= 150 else log.warn)(f"AGENTS.md is {lines} lines (target <= 150)")
 
@@ -97,7 +97,7 @@ def check_policy(log: Log) -> None:
             log.ok(f"{short(home)}/settings.json: all {len(ask)} ask rules")
     text = codex_rules_text()
     for home in CODEX_HOMES:
-        f = home / "rules" / "agent-config.rules"
+        f = home / "rules" / "agentrc.rules"
         if not f.exists() or f.read_text() != text:
             log.error(f"{short(f)} missing or stale (run bin/sync)")
             continue
@@ -164,7 +164,7 @@ def check_repo(log: Log) -> None:
     if (REPO / ".git").exists():
         r = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain"], capture_output=True, text=True)
         if r.stdout.strip():
-            log.warn("uncommitted changes in ~/agent-config")
+            log.warn("uncommitted changes in ~/agentrc")
         else:
             log.ok("working tree clean")
     for f in REPO.rglob("*"):
@@ -174,7 +174,7 @@ def check_repo(log: Log) -> None:
 
 def main() -> None:
     log = Log()
-    print(f"agent-config doctor: {short(REPO)}")
+    print(f"agentrc doctor: {short(REPO)}")
     report_harnesses(log, hint_unlisted=True)
     found = check_skills(log)
     check_links(log, found)

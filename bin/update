@@ -19,7 +19,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from agent_config import *  # noqa: E402,F403
+from agentrc import *  # noqa: E402,F403
 
 SKIP_SOURCES = {"local", "merged"}
 
@@ -51,7 +51,7 @@ def main() -> None:
     lock = lock_entries()
     if target and target not in lock:
         sys.exit(f"{target} is not in skills.lock")
-    with tempfile.TemporaryDirectory(prefix="agent-config-update-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="agentrc-update-") as tmp:
         for name, e in lock.items():
             if target and name != target:
                 continue

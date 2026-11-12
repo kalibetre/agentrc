@@ -1,9 +1,9 @@
 # Command prefixes that always need the user's approval, in every harness.
 # One per line, words separated by spaces. Rendered by bin/sync into:
 #   Claude Code  permissions.ask  ("Bash(<prefix>:*)")  in each profile's settings.json
-#   Codex        rules/agent-config.rules  (prefix_rule, decision="prompt")
+#   Codex        rules/agentrc.rules  (prefix_rule, decision="prompt")
 #   OpenCode     permission.bash  ("<prefix> *": "ask") in opencode.json
-#   Pi           the agent-config-guard extension (asks via a confirm dialog)
+#   Pi           the agentrc-guard extension (asks via a confirm dialog)
 git push
 git reset --hard
 git clean

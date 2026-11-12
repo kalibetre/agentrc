@@ -70,7 +70,16 @@ are left alone. The `${secret:NAME}` mechanism (D9) stays for shared servers.
 Hardcoding `~/.claude-work` and `~/.codex-work` made the repo specific to this
 machine. Defaults are each harness's standard home plus its own variable
 (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR`); OpenCode documents no
-such variable. Extra profiles go in `~/.config/agent-config/profiles.toml`,
+such variable. Extra profiles go in `~/.config/agentrc/profiles.toml`,
 outside the repo; a listed harness uses exactly that list. Rejected: treating
 every `~/.claude-*` folder as a profile (catches backups) and reading shell
 aliases (fragile). Doctor only hints at unlisted profile-like folders.
+
+## D14. Renamed to agentrc and published
+The project was `agent-config`; it is now `agentrc` (repo `~/agentrc`, skill
+`agentrc`, Keychain service `agentrc`, `~/.config/agentrc/profiles.toml`), and is
+public at github.com/kalibetre/agentrc under MIT. `bin/sync` migrates what it wrote
+under the old name (Codex rules file, Pi guard link, marked blocks, state file,
+`CLAUDE.md` imports); the `LEGACY_*` constants in `bin/agentrc.py` can go once no
+machine has them. The machine audit (formerly `research/04`) is personal and stays
+out of the repo.

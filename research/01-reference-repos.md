@@ -26,7 +26,7 @@ process-owning frameworks (GSD, BMAD, Spec-Kit). Meant to be forked.
 - **Per-repo setup writes `docs/agents/*.md`** and only a pointer block into
   AGENTS.md/CLAUDE.md. We adapted this as `setup-repo`.
 - `writing-for-agents` is the best harness-neutral guide to writing skills and
-  AGENTS.md; vendored as references inside `agent-config`.
+  AGENTS.md; vendored as references inside `agentrc`.
 
 **Dependency map of what we kept**: `wayfinder` → grilling, domain-modeling,
 research · `grill-with-docs` → grilling, domain-modeling ·

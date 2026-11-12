@@ -2,7 +2,7 @@
 
 These apply in every harness (Claude Code, Codex, OpenCode, Pi) and every
 repository. A repository's own `AGENTS.md` adds to them and wins on conflict.
-Source: `~/agent-config/AGENTS.md`; do not edit the linked copies.
+Source: `~/agentrc/AGENTS.md`; do not edit the linked copies.
 
 ## Working with me
 
@@ -43,10 +43,10 @@ Ask first, and wait for a yes, before:
 - Deleting files or data outside what the current task created; database
   migrations against non-local databases; anything touching production,
   infrastructure, cloud resources, DNS or billing.
-- Installing global tools or changing machine-wide config outside `~/agent-config`.
+- Installing global tools or changing machine-wide config outside `~/agentrc`.
 - Posting anything outside this machine: comments, issues, messages, emails.
 
-`~/agent-config/policy/ask.txt` enforces the git and PR part in every harness.
+`~/agentrc/policy/ask.txt` enforces the git and PR part in every harness.
 Never try to get around a blocked or prompted command; ask me instead.
 
 ## Git
@@ -71,10 +71,10 @@ Use what the repo already uses; when nothing decides it:
 
 ## Skills
 
-All personal skills live in `~/agent-config/skills/` and are linked into every
-harness by `~/agent-config/bin/sync`.
+All personal skills live in `~/agentrc/skills/` and are linked into every
+harness by `~/agentrc/bin/sync`.
 
-- To add, create, install, update or remove a skill, use the `agent-config`
+- To add, create, install, update or remove a skill, use the `agentrc`
   skill. Never install skills with `npx skills`, a plugin or marketplace, or by
   writing into a harness's skills folder.
 - When a skill says "Call the Skill tool with X" and your harness has no Skill

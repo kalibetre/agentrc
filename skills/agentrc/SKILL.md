@@ -1,14 +1,14 @@
 ---
-name: agent-config
-description: Manage the user's shared agent configuration in ~/agent-config - the single source for skills, global AGENTS.md, approval policy and MCP servers across Claude Code, Codex, OpenCode and Pi. Use when the user asks to add, install, create, write, update, rename or remove a skill; to change global agent instructions, the approval policy or MCP servers; or when editing any SKILL.md, AGENTS.md or CLAUDE.md.
+name: agentrc
+description: Manage the user's shared agent configuration in ~/agentrc - the single source for skills, global AGENTS.md, approval policy and MCP servers across Claude Code, Codex, OpenCode and Pi. Use when the user asks to add, install, create, write, update, rename or remove a skill; to change global agent instructions, the approval policy or MCP servers; or when editing any SKILL.md, AGENTS.md or CLAUDE.md.
 ---
 
-# agent-config
+# agentrc
 
-`~/agent-config` is the only place skills and global agent settings live.
+`~/agentrc` is the only place skills and global agent settings live.
 `bin/sync` links them into every harness, so one change reaches Claude Code
 (every profile), Codex (every home), OpenCode and Pi at once. Profiles beyond
-the defaults are listed per machine in `~/.config/agent-config/profiles.toml`.
+the defaults are listed per machine in `~/.config/agentrc/profiles.toml`.
 
 Never install a skill any other way: no `npx skills add`, no plugin or
 marketplace install, no copying into `~/.claude/skills`, `~/.agents/skills`,
@@ -61,8 +61,8 @@ generated, and `bin/sync` prunes what it did not create.
    Supporting files sit one level deep and are linked relatively.
 6. **Record provenance** in `skills.lock`: one line with the name, source
    (`owner/repo` or `local`), upstream path, commit, and what you changed.
-7. **Apply and verify**: `~/agent-config/bin/sync && ~/agent-config/bin/doctor`.
-8. **Commit** in `~/agent-config`: `git add -A && git commit -m "skills: add <name>"`.
+7. **Apply and verify**: `~/agentrc/bin/sync && ~/agentrc/bin/doctor`.
+8. **Commit** in `~/agentrc`: `git add -A && git commit -m "skills: add <name>"`.
 9. Tell the user to start a new session (or restart the agent) in each harness
    to pick it up.
 
@@ -85,7 +85,7 @@ in `skills.lock`, then sync, doctor and commit.
 - **Approval policy**: one command prefix per line in `policy/ask.txt`.
 - **MCP servers**: edit `mcp.json`. Secrets are written as `${secret:NAME}` and
   resolved at sync time from the environment or the macOS Keychain
-  (`security find-generic-password -s agent-config -a NAME -w`). They never go
+  (`security find-generic-password -s agentrc -a NAME -w`). They never go
   in the repo.
 
 Then run step 7 and 8.

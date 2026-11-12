@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Link ~/agent-config into every harness. Safe to re-run; only touches what it manages.
+"""Link ~/agentrc into every harness. Safe to re-run; only touches what it manages.
 
   bin/sync            apply everything
   bin/sync --dry-run  show what would change (skills and instructions only)
@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from agent_config import *  # noqa: E402,F403
+from agentrc import *  # noqa: E402,F403
 
 DRY = "--dry-run" in sys.argv
 
@@ -42,7 +42,7 @@ def sync_skills(log: Log) -> None:
                 entry.unlink()
                 log.change(f"removed stale link {short(entry)}")
             else:
-                quarantine(entry, log, "not managed by agent-config")
+                quarantine(entry, log, "not managed by agentrc")
         for name, path in found.items():
             link = target / name
             if not (link.is_symlink() and Path(os.readlink(link)) == path):
@@ -55,7 +55,7 @@ def sync_skills(log: Log) -> None:
     for d in FORBIDDEN_SKILL_DIRS:
         if d.exists() and not DRY:
             for entry in sorted(d.iterdir()):
-                quarantine(entry, log, "harness-specific skills folder; use ~/agent-config/skills")
+                quarantine(entry, log, "harness-specific skills folder; use ~/agentrc/skills")
             d.rmdir()
             log.change(f"removed {short(d)}")
 
@@ -70,12 +70,14 @@ def sync_instructions(log: Log) -> None:
         if DRY:
             log.change(f"would write {short(f)}")
             continue
-        if f.exists() or f.is_symlink():
-            backup = f.with_name("CLAUDE.md.pre-agent-config")
+        if f.is_file() and f.read_text() == LEGACY_CLAUDE_IMPORT:
+            pass  # written by this tool under its old name; nothing to keep
+        elif f.exists() or f.is_symlink():
+            backup = f.with_name("CLAUDE.md.pre-agentrc")
             os.replace(f, backup)
             log.change(f"kept old {short(f)} as {short(backup)}")
         f.write_text(CLAUDE_IMPORT)
-        log.change(f"wrote {short(f)} (@~/agent-config/AGENTS.md)")
+        log.change(f"wrote {short(f)} (@~/agentrc/AGENTS.md)")
 
     links = [h / "AGENTS.md" for h in CODEX_HOMES + OPENCODE_HOMES + PI_HOMES]
     for link in links:
@@ -100,14 +102,18 @@ def sync_policy(log: Log, state: dict) -> None:
         if merged != perms.get("ask"):
             perms["ask"] = merged
             save_json(f, data)
-            log.change(f"{short(f)}: permissions.ask now has {len(ask)} agent-config rules")
+            log.change(f"{short(f)}: permissions.ask now has {len(ask)} agentrc rules")
         else:
             log.ok(f"{short(f)}: {len(ask)} ask rules")
     state["claude_ask"] = ask
 
     text = codex_rules_text()
     for home in CODEX_HOMES:
-        f = home / "rules" / "agent-config.rules"
+        legacy = home / "rules" / LEGACY_CODEX_RULES
+        if legacy.exists():
+            legacy.unlink()
+            log.change(f"removed {short(legacy)} (old name)")
+        f = home / "rules" / "agentrc.rules"
         if f.exists() and f.read_text() == text:
             log.ok(f"{short(f)}")
             continue
@@ -130,13 +136,17 @@ def sync_policy(log: Log, state: dict) -> None:
         bash.update(new)
         if json.dumps(data, sort_keys=True) != before:
             save_json(f, data)
-            log.change(f"{short(f)}: permission.bash has {len(new)} agent-config patterns")
+            log.change(f"{short(f)}: permission.bash has {len(new)} agentrc patterns")
         else:
             log.ok(f"{short(f)}: {len(new)} permission.bash patterns")
         state["opencode_bash"] = list(new)
         state.pop("opencode_rules", None)
 
     for home in PI_HOMES:
+        legacy = home / "extensions" / LEGACY_PI_GUARD
+        if legacy.is_symlink():
+            legacy.unlink()
+            log.change(f"removed {short(legacy)} (old name)")
         ensure_symlink(home / "extensions" / PI_GUARD.name, PI_GUARD, log)
         log.ok(f"{short(home / 'extensions' / PI_GUARD.name)}")
 
@@ -181,7 +191,7 @@ def sync_mcp(log: Log, state: dict) -> None:
         f = home / "config.toml"
         text = f.read_text() if f.exists() else ""
         body = strip_toml_tables(strip_marked_block(text), list(servers) + removed).rstrip("\n")
-        block = [MARK_BEGIN, "# MCP servers from ~/agent-config/mcp.json. Edit there, then run bin/sync."]
+        block = [MARK_BEGIN, "# MCP servers from ~/agentrc/mcp.json. Edit there, then run bin/sync."]
         for name, spec in servers.items():
             block += ["", f"[mcp_servers.{name}]", f"url = {toml_str(spec['url'])}"]
             if spec["headers"]:
@@ -236,7 +246,7 @@ def sync_mcp(log: Log, state: dict) -> None:
 
 def sync_env(log: Log) -> None:
     log.section("Environment")
-    block = (f"{MARK_BEGIN}\n# Managed by ~/agent-config/bin/sync.\n"
+    block = (f"{MARK_BEGIN}\n# Managed by ~/agentrc/bin/sync.\n"
              "# OpenCode also scans ~/.claude/skills; the same skills already come from ~/.agents/skills.\n"
              f"export OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1\n{MARK_END}\n")
     text = ZSHENV.read_text() if ZSHENV.exists() else ""
@@ -256,7 +266,7 @@ def sync_env(log: Log) -> None:
 
 def main() -> None:
     log = Log()
-    print(f"agent-config sync{' (dry run)' if DRY else ''}: {short(REPO)}")
+    print(f"agentrc sync{' (dry run)' if DRY else ''}: {short(REPO)}")
     report_harnesses(log)
     if log.errors:
         print(f"\nFix {short(PROFILES_FILE)} first; nothing was changed.")

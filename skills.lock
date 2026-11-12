@@ -18,5 +18,5 @@ file-pr                        t3dotgg/tstack           skills/file-pr          
 frontend-ui                    merged                   -                                                -    see skills/frontend-ui/NOTICE.md
 varlock                        dmno-dev/varlock         skills/varlock                                   -    copied from the earlier npx-skills install (2026-09-15); commit unknown
 fizzy                          basecamp/fizzy-cli       skills/fizzy                                     -    copied from an earlier install; commit unknown, older than upstream c39a4ab
-agent-config                   local                    -                                                -    references/ copied from mattpocock/skills writing-for-agents @ 5863806dd4e15c63174bee4e7515a4256792ecfa
+agentrc                        local                    -                                                -    references/ copied from mattpocock/skills writing-for-agents @ 5863806dd4e15c63174bee4e7515a4256792ecfa
 setup-repo                     local                    -                                                -    templates/ adapted from mattpocock/skills setup-matt-pocock-skills @ 5863806dd4e15c63174bee4e7515a4256792ecfa (triage removed, Jira added)

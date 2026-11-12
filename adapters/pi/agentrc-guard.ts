@@ -1,13 +1,13 @@
-// agent-config guard for Pi.
+// agentrc guard for Pi.
 // Asks the user before any bash command that starts with a prefix listed in
-// ~/agent-config/policy/ask.txt. Without a UI (print/json mode) the command is
-// blocked. Linked into ~/.pi/agent/extensions/ by ~/agent-config/bin/sync.
+// ~/agentrc/policy/ask.txt. Without a UI (print/json mode) the command is
+// blocked. Linked into ~/.pi/agent/extensions/ by ~/agentrc/bin/sync.
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { type ExtensionAPI, isToolCallEventType } from "@earendil-works/pi-coding-agent";
 
-const POLICY = join(homedir(), "agent-config", "policy", "ask.txt");
+const POLICY = join(homedir(), "agentrc", "policy", "ask.txt");
 
 function loadPrefixes(): string[][] {
   try {
@@ -46,9 +46,9 @@ export default function (pi: ExtensionAPI) {
     const hit = commands(line).find((w) => prefixes.some((p) => matches(w, p)));
     if (!hit) return;
     if (!ctx.hasUI) {
-      return { block: true, reason: `agent-config policy: "${hit.join(" ")}" needs the user's approval; ask them first.` };
+      return { block: true, reason: `agentrc policy: "${hit.join(" ")}" needs the user's approval; ask them first.` };
     }
-    const ok = await ctx.ui.confirm("Approval needed (agent-config policy)", line);
+    const ok = await ctx.ui.confirm("Approval needed (agentrc policy)", line);
     if (!ok) return { block: true, reason: "The user declined this command." };
   });
 }

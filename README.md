@@ -1,4 +1,4 @@
-# agent-config
+# agentrc
 
 One source of truth for how coding agents work on this machine. Skills, global
 instructions, the approval policy and MCP servers live here, and `bin/sync`
@@ -17,7 +17,7 @@ T3 Code drives the same homes, so it gets the same setup.
 Change something here once, run `bin/sync`, and every harness behaves the same.
 
 ```
-                       ~/agent-config  (this repo)
+                       ~/agentrc  (this repo)
    AGENTS.md      skills/*      policy/ask.txt       mcp.json
        │             │                 │                 │
        │         bin/sync ─────────────┼─────────────────┤
@@ -31,9 +31,9 @@ Change something here once, run `bin/sync`, and every harness behaves the same.
 ## Quick start
 
 ```sh
-git clone <this repo> ~/agent-config      # must live at ~/agent-config
-~/agent-config/bin/sync                   # link everything (safe to re-run)
-~/agent-config/bin/doctor                 # verify every harness, exit 1 on problems
+git clone https://github.com/kalibetre/agentrc ~/agentrc      # must live at ~/agentrc
+~/agentrc/bin/sync                   # link everything (safe to re-run)
+~/agentrc/bin/doctor                 # verify every harness, exit 1 on problems
 ```
 
 Then open a new shell, which picks up `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS`, and
@@ -50,7 +50,7 @@ install it later and re-run `bin/sync`.
 With no setup, each harness has one profile: its standard home, plus the folder
 in its own variable if that is set (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
 `PI_CODING_AGENT_DIR`). To use more profiles, such as a work account, list them
-in `~/.config/agent-config/profiles.toml`, which lives outside the repo because
+in `~/.config/agentrc/profiles.toml`, which lives outside the repo because
 it differs per machine:
 
 ```toml
@@ -68,7 +68,7 @@ profile, such as a `~/.claude-*` folder with a `settings.json`.
 `bin/sync` only touches what it manages:
 - **Skill folders:** anything else it finds in a managed skill folder is moved to
   `~/.agents/quarantine/`, never deleted.
-- **Instruction files:** an existing file it replaces is kept as `*.pre-agent-config`.
+- **Instruction files:** an existing file it replaces is kept as `*.pre-agentrc`.
 - **Configs:** its entries are merged into your own settings, which stay as they are.
 
 ## Adding a skill
@@ -76,7 +76,7 @@ profile, such as a `~/.claude-*` folder with a `settings.json`.
 Ask any agent, in any harness, something like *"add a skill for X"* or *"install
 the Y skill from github.com/owner/repo"*.
 
-- The global `AGENTS.md` sends every agent to the `agent-config` skill. That
+- The global `AGENTS.md` sends every agent to the `agentrc` skill. That
   skill writes or copies the skill into `skills/`, records where it came from in
   `skills.lock`, then runs `bin/sync` and `bin/doctor` and commits.
 - The new skill appears in all four harnesses after a session restart.
@@ -96,7 +96,7 @@ To do it by hand:
 3. Add a line to `skills.lock`.
 4. Run `bin/sync && bin/doctor`, then commit.
 
-The writing guide is `skills/agent-config/references/writing-for-agents.md`.
+The writing guide is `skills/agentrc/references/writing-for-agents.md`.
 
 ## The skills
 
@@ -131,7 +131,7 @@ description, and you can still call them by name.
 | | `file-pr` | user | Drafts a problem-first PR, shows it to you, pushes and files it after you say yes, then stops | tstack (rewritten) |
 | Session | `handoff` | user | Compacts the session into a document another session or harness can continue from | mattpocock |
 | Meta | `setup-repo` | user | Gives a repo its `AGENTS.md`, a one-line `CLAUDE.md` and `docs/agents/` (issue tracker, domain docs) | local |
-| | `agent-config` | model | Manages this repo: add, update or remove skills, edit policy or MCP | local |
+| | `agentrc` | model | Manages this repo: add, update or remove skills, edit policy or MCP | local |
 | Tools | `fizzy` | model | Fizzy CLI (boards, cards) | basecamp/fizzy-cli |
 | | `varlock` | model | Environment variables and secrets with Varlock | dmno-dev/varlock |
 
@@ -161,9 +161,9 @@ each harness's own permission mechanism:
 | Harness | Mechanism |
 |---|---|
 | Claude Code | `permissions.ask` in each profile's `settings.json` |
-| Codex | `rules/agent-config.rules`, a `prefix_rule` with `decision="prompt"` |
+| Codex | `rules/agentrc.rules`, a `prefix_rule` with `decision="prompt"` |
 | OpenCode | `permission.bash` patterns set to `"ask"` |
-| Pi | `adapters/pi/agent-config-guard.ts`, which opens a confirm dialog and blocks when Pi has no UI |
+| Pi | `adapters/pi/agentrc-guard.ts`, which opens a confirm dialog and blocks when Pi has no UI |
 
 The same rules are also written in prose in `AGENTS.md`. The prose is advice;
 the permission rules are what actually enforce it.
@@ -177,11 +177,11 @@ configured in that harness directly; sync leaves entries it doesn't manage alone
 
 Secrets are written as `${secret:NAME}` and never stored in this repo. At sync
 time each value is read from the environment variable `NAME` or, failing that,
-from the macOS Keychain under service `agent-config`. To store one:
+from the macOS Keychain under service `agentrc`. To store one:
 
 ```sh
-security add-generic-password -U -s agent-config -a NAME -w '<value>'
-~/agent-config/bin/sync
+security add-generic-password -U -s agentrc -a NAME -w '<value>'
+~/agentrc/bin/sync
 ```
 
 While a secret is missing, `bin/sync` leaves that server's existing entries alone
@@ -203,7 +203,7 @@ skills/<name>/            one folder per skill: SKILL.md, optional references/, 
 skills.lock               provenance: source, upstream path, commit, local changes
 policy/ask.txt            commands that need approval
 mcp.json                  MCP servers
-profiles.example.toml     example for ~/.config/agent-config/profiles.toml (per machine)
+profiles.example.toml     example for ~/.config/agentrc/profiles.toml (per machine)
 adapters/pi/              Pi extension enforcing the policy
 bin/                      sync, doctor, update (Python 3.11+ stdlib, no dependencies)
 research/                 why it's built this way (read before changing the shape)
@@ -233,8 +233,10 @@ not here.
   `bin/doctor` runs `opencode debug config` to catch this.
 - **Something appeared in `~/.agents/quarantine/`:** an installer or agent wrote
   into a managed skills folder. If it's wanted, move it into `skills/` the
-  proper way, using the `agent-config` skill.
-- **Undo everything:** the pre-setup state is in `~/agent-config-backup-2026-11-12.tar.gz`.
+  proper way, using the `agentrc` skill.
+- **Undo:** `bin/sync` keeps any file of yours it replaces as `*.pre-agentrc` and
+  moves stray skills to `~/.agents/quarantine/`. It only deletes links and files it
+  generated itself.
 
 ## Research and credits
 
@@ -245,7 +247,6 @@ not here.
 | `01-reference-repos.md` | The three skill collections that shaped it |
 | `02-harness-matrix.md` | Paths and formats for each harness, and what was tested |
 | `03-ui-skills.md` | Evaluation of UI skills |
-| `04-machine-audit-2026-11-12.md` | What was on the machine and what was removed |
 | `05-decisions.md` | Decision log |
 
 Vendored skills keep their upstream licenses (copies in `LICENSES/`):
