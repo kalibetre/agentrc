@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Compare vendored skills with their upstream repos.
+
+  bin/update                 fetch every upstream in skills.lock, show what changed
+  bin/update --diff <name>   print the full diff for one skill
+  bin/update --apply <name>  replace skills/<name> with upstream and record the new commit
+
+Upstreams are cloned into a temporary directory and never executed.
+After --apply, re-apply the local changes listed in skills.lock, then run
+bin/sync, bin/doctor and commit.
+"""
+from __future__ import annotations
+
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from agent_config import *  # noqa: E402,F403
+
+SKIP_SOURCES = {"local", "merged"}
+
+
+def clone(source: str, into: Path) -> tuple[Path, str]:
+    dest = into / source.replace("/", "__")
+    if not dest.exists():
+        subprocess.run(["git", "clone", "-q", "--depth", "1", f"https://github.com/{source}.git", str(dest)],
+                       check=True)
+    head = subprocess.run(["git", "-C", str(dest), "rev-parse", "HEAD"], capture_output=True, text=True,
+                          check=True).stdout.strip()
+    return dest, head
+
+
+def diff(a: Path, b: Path) -> str:
+    r = subprocess.run(["diff", "-ru", "-x", ".git", str(a), str(b)], capture_output=True, text=True)
+    return r.stdout
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    mode, target = ("summary", None)
+    if args[:1] in (["--diff"], ["--apply"]) and len(args) == 2:
+        mode, target = args[0][2:], args[1]
+    elif args:
+        print(__doc__)
+        sys.exit(2)
+
+    lock = lock_entries()
+    if target and target not in lock:
+        sys.exit(f"{target} is not in skills.lock")
+    with tempfile.TemporaryDirectory(prefix="agent-config-update-") as tmp:
+        for name, e in lock.items():
+            if target and name != target:
+                continue
+            if e["source"] in SKIP_SOURCES or e["path"] == "-":
+                if target:
+                    sys.exit(f"{name} has source '{e['source']}'; update it by hand")
+                continue
+            repo, head = clone(e["source"], Path(tmp))
+            upstream = repo / e["path"]
+            if not upstream.is_dir():
+                print(f"  ??    {name}: {e['path']} no longer exists in {e['source']}")
+                continue
+            d = diff(SKILLS / name, upstream)
+            changed = "local changes: " + e["changes"] if e["changes"] != "-" else ""
+            if mode == "summary":
+                state = "up to date" if not d else f"differs ({d.count(chr(10))} diff lines)"
+                moved = "" if head.startswith(e["commit"]) else f" upstream {e['commit'][:7]} -> {head[:7]}"
+                print(f"  {name:31} {state}{moved} {changed}")
+            elif mode == "diff":
+                print(d or f"{name}: identical to upstream")
+            elif mode == "apply":
+                shutil.rmtree(SKILLS / name)
+                shutil.copytree(upstream, SKILLS / name, ignore=shutil.ignore_patterns(".git", ".DS_Store"))
+                text = LOCK.read_text()
+                text = re.sub(rf"^({re.escape(name)}\s+\S+\s+\S+\s+)\S+", lambda m: m.group(1) + head, text,
+                              count=1, flags=re.M)
+                LOCK.write_text(text)
+                print(f"{name}: replaced with {e['source']}@{head[:7]}")
+                if changed:
+                    print(f"Re-apply the {changed}")
+                print("Then: bin/sync && bin/doctor && git commit")
+
+
+if __name__ == "__main__":
+    main()

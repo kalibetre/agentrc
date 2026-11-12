@@ -1,0 +1,5 @@
+interface:
+  display_name: "Setup Repo"
+  short_description: "AGENTS.md, CLAUDE.md pointer and docs/agents for a repo"
+policy:
+  allow_implicit_invocation: false

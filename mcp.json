@@ -1,0 +1,15 @@
+{
+  "$comment": "MCP servers for every harness. bin/sync renders this into Claude Code (both profiles), Codex (both homes), OpenCode and Pi. Secrets are ${secret:NAME}: resolved at sync time from $NAME or the macOS Keychain (service 'agent-config', account NAME). They are never stored in this repo.",
+  "servers": {
+    "context7": {
+      "url": "https://mcp.context7.com/mcp",
+      "headers": { "CONTEXT7_API_KEY": "${secret:CONTEXT7_API_KEY}" }
+    },
+    "gh_grep": {
+      "url": "https://mcp.grep.app"
+    },
+    "executor": {
+      "url": "http://127.0.0.1:4312/mcp"
+    }
+  }
+}

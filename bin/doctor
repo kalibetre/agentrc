@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""Verify every harness sees exactly what ~/agent-config defines. Read-only.
+
+Exit code 0 when everything matches, 1 when something needs `bin/sync` or a fix.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from agent_config import *  # noqa: E402,F403
+
+
+def check_skills(log: Log) -> dict[str, Path]:
+    log.section("Skills in the repo")
+    found = skills()
+    for name, path in found.items():
+        validate_skill(name, path, log)
+    lock = lock_entries()
+    for name in found:
+        if name not in lock:
+            log.error(f"skills/{name}: no line in skills.lock")
+    for name in lock:
+        if name not in found:
+            log.error(f"skills.lock lists {name}, but skills/{name} does not exist")
+    user = [n for n, p in found.items() if frontmatter(p / "SKILL.md").get("disable-model-invocation") == "true"]
+    log.ok(f"{len(found)} skills ({len(found) - len(user)} model-invoked, {len(user)} user-invoked)")
+    return found
+
+
+def check_links(log: Log, found: dict[str, Path]) -> None:
+    log.section("Skills each harness sees")
+    for target in [AGENTS_SKILLS] + [h / "skills" for h in CLAUDE_HOMES if h.exists()]:
+        if not target.is_dir():
+            log.error(f"{short(target)} missing; run bin/sync")
+            continue
+        names = set()
+        for entry in target.iterdir():
+            if entry.name in BUILTIN_SKILL_ENTRIES:
+                continue
+            ours = entry.is_symlink() and Path(os.readlink(entry)).parent == SKILLS
+            if not ours:
+                log.error(f"{short(entry)} is not managed by agent-config (bin/sync will quarantine it)")
+            elif not entry.exists():
+                log.error(f"{short(entry)} is a broken link")
+            names.add(entry.name)
+        missing = set(found) - names
+        if missing:
+            log.error(f"{short(target)}: missing {', '.join(sorted(missing))}")
+        if not missing and names == set(found):
+            log.ok(f"{short(target)}: exactly the {len(found)} repo skills")
+    for d in FORBIDDEN_SKILL_DIRS:
+        if d.exists():
+            log.error(f"{short(d)} exists; skills must only come from ~/agent-config (run bin/sync)")
+    if os.environ.get("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS") != "1":
+        log.warn("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS is not set in this shell; OpenCode may list skills twice "
+                 "(open a new shell after bin/sync)")
+    for home in CLAUDE_HOMES:
+        plugins = load_json(home / "settings.json").get("enabledPlugins", {})
+        on = [p for p, v in plugins.items() if v]
+        if on:
+            log.warn(f"{short(home)}: Claude plugins enabled: {', '.join(on)} (plugins can bring their own skills)")
+
+
+def check_instructions(log: Log) -> None:
+    log.section("Global instructions")
+    for home in CLAUDE_HOMES:
+        f = home / "CLAUDE.md"
+        if home.exists():
+            if f.is_file() and f.read_text() == CLAUDE_IMPORT:
+                log.ok(f"{short(f)} imports AGENTS.md")
+            else:
+                log.error(f"{short(f)} does not contain exactly '@~/agent-config/AGENTS.md'")
+    for link in [h / "AGENTS.md" for h in CODEX_HOMES if h.exists()] + [OPENCODE / "AGENTS.md", PI / "AGENTS.md"]:
+        if link.is_symlink() and Path(os.readlink(link)) == AGENTS_MD:
+            log.ok(f"{short(link)} -> AGENTS.md")
+        else:
+            log.error(f"{short(link)} is not a link to ~/agent-config/AGENTS.md")
+    lines = AGENTS_MD.read_text().count("\n")
+    (log.ok if lines <= 150 else log.warn)(f"AGENTS.md is {lines} lines (target <= 150)")
+
+
+def check_policy(log: Log) -> None:
+    log.section("Approval policy")
+    ask = claude_ask_rules()
+    for home in CLAUDE_HOMES:
+        if not home.exists():
+            continue
+        have = set(load_json(home / "settings.json").get("permissions", {}).get("ask", []))
+        missing = [r for r in ask if r not in have]
+        if missing:
+            log.error(f"{short(home)}/settings.json: {len(missing)} ask rules missing (run bin/sync)")
+        else:
+            log.ok(f"{short(home)}/settings.json: all {len(ask)} ask rules")
+    text = codex_rules_text()
+    for home in CODEX_HOMES:
+        if not home.exists():
+            continue
+        f = home / "rules" / "agent-config.rules"
+        if not f.exists() or f.read_text() != text:
+            log.error(f"{short(f)} missing or stale (run bin/sync)")
+            continue
+        r = subprocess.run(["codex", "execpolicy", "check", "--rules", str(f), "git", "push", "origin", "main"],
+                           capture_output=True, text=True)
+        if r.returncode == 0 and "prompt" in r.stdout:
+            log.ok(f"{short(f)}: `git push` -> prompt")
+        else:
+            log.error(f"{short(f)}: codex execpolicy check did not return prompt: {(r.stdout + r.stderr).strip()[:200]}")
+    bash = load_json(OPENCODE / "opencode.json").get("permission", {}).get("bash", {})
+    want = opencode_rules()
+    if isinstance(bash, dict) and all(bash.get(k) == v for k, v in want.items()):
+        log.ok(f"~/.config/opencode/opencode.json: all {len(want)} permission.bash patterns")
+    else:
+        log.error("~/.config/opencode/opencode.json: permission.bash patterns missing (run bin/sync)")
+    if shutil.which("opencode"):
+        r = subprocess.run(["opencode", "debug", "config"], capture_output=True, text=True, timeout=60)
+        if r.returncode == 0 and "Configuration is invalid" not in r.stdout + r.stderr:
+            log.ok("opencode accepts its configuration")
+        else:
+            log.error(f"opencode rejects its configuration: {(r.stdout + r.stderr).strip()[:300]}")
+    guard = PI / "extensions" / PI_GUARD.name
+    if guard.is_symlink() and Path(os.readlink(guard)) == PI_GUARD:
+        log.ok(f"{short(guard)} linked")
+    else:
+        log.error(f"{short(guard)} not linked (run bin/sync)")
+    extra = [p.name for p in (PI / "extensions").iterdir() if p.name != PI_GUARD.name] if (PI / "extensions").exists() else []
+    if extra:
+        log.warn(f"other Pi extensions present: {', '.join(extra)}")
+
+
+def check_mcp(log: Log) -> None:
+    log.section("MCP servers")
+    servers, skipped = mcp_servers(log)
+    names = list(servers)
+    views = {}
+    for home in CLAUDE_HOMES:
+        if home.exists():
+            views[f"claude {short(home)}"] = set(load_json(home / ".claude.json").get("mcpServers", {}))
+    for home in CODEX_HOMES:
+        f = home / "config.toml"
+        if f.exists():
+            try:
+                views[f"codex {short(home)}"] = set(tomllib.loads(f.read_text()).get("mcp_servers", {}))
+            except tomllib.TOMLDecodeError as e:
+                log.error(f"{short(f)} is not valid TOML: {e}")
+    views["opencode"] = set(load_json(OPENCODE / "opencode.json").get("mcp", {}))
+    views["pi"] = set(load_json(PI / "mcp.json").get("mcpServers", {}))
+    for who, have in views.items():
+        missing = [n for n in names if n not in have]
+        if missing:
+            log.error(f"{who}: missing {', '.join(missing)} (run bin/sync)")
+        else:
+            log.ok(f"{who}: {', '.join(names)}")
+    for f in [OPENCODE / "opencode.json", PI / "mcp.json"] + [h / "config.toml" for h in CODEX_HOMES]:
+        if f.exists() and re.search(r"ctx7sk-[0-9a-f-]{8,}", f.read_text()):
+            if "context7" in skipped:
+                log.warn(f"{short(f)} still holds a plaintext Context7 key; store it in the Keychain and re-run "
+                         f"bin/sync (see README)")
+
+
+def check_repo(log: Log) -> None:
+    log.section("Repo")
+    if (REPO / ".git").exists():
+        r = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain"], capture_output=True, text=True)
+        if r.stdout.strip():
+            log.warn("uncommitted changes in ~/agent-config")
+        else:
+            log.ok("working tree clean")
+    for f in REPO.rglob("*"):
+        if f.is_file() and ".git" not in f.parts and re.search(r"ctx7sk-[0-9a-f-]{8,}", f.read_text(errors="ignore")):
+            log.error(f"{short(f)} contains a secret; secrets must not be committed")
+
+
+def main() -> None:
+    log = Log()
+    print(f"agent-config doctor: {short(REPO)}")
+    found = check_skills(log)
+    check_links(log, found)
+    check_instructions(log)
+    check_policy(log)
+    check_mcp(log)
+    check_repo(log)
+    print(f"\n{len(log.errors)} error(s), {len(log.warnings)} warning(s).")
+    sys.exit(1 if log.errors else 0)
+
+
+if __name__ == "__main__":
+    main()
