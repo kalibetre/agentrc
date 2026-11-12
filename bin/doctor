@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tomllib
@@ -37,7 +36,7 @@ def check_skills(log: Log) -> dict[str, Path]:
 
 def check_links(log: Log, found: dict[str, Path]) -> None:
     log.section("Skills each harness sees")
-    for target in [AGENTS_SKILLS] + [h / "skills" for h in CLAUDE_HOMES if installed(h)]:
+    for target in [AGENTS_SKILLS] + [h / "skills" for h in CLAUDE_HOMES]:
         if not target.is_dir():
             log.error(f"{short(target)} missing; run bin/sync")
             continue
@@ -59,10 +58,10 @@ def check_links(log: Log, found: dict[str, Path]) -> None:
     for d in FORBIDDEN_SKILL_DIRS:
         if d.exists():
             log.error(f"{short(d)} exists; skills must only come from ~/agent-config (run bin/sync)")
-    if installed(OPENCODE) and os.environ.get("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS") != "1":
+    if OPENCODE_HOMES and os.environ.get("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS") != "1":
         log.warn("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS is not set in this shell; OpenCode may list skills twice "
                  "(open a new shell after bin/sync)")
-    for home in filter(installed, CLAUDE_HOMES):
+    for home in CLAUDE_HOMES:
         plugins = load_json(home / "settings.json").get("enabledPlugins", {})
         on = [p for p, v in plugins.items() if v]
         if on:
@@ -73,12 +72,11 @@ def check_instructions(log: Log) -> None:
     log.section("Global instructions")
     for home in CLAUDE_HOMES:
         f = home / "CLAUDE.md"
-        if installed(home):
-            if f.is_file() and f.read_text() == CLAUDE_IMPORT:
-                log.ok(f"{short(f)} imports AGENTS.md")
-            else:
-                log.error(f"{short(f)} does not contain exactly '@~/agent-config/AGENTS.md'")
-    for link in [h / "AGENTS.md" for h in CODEX_HOMES + [OPENCODE, PI] if installed(h)]:
+        if f.is_file() and f.read_text() == CLAUDE_IMPORT:
+            log.ok(f"{short(f)} imports AGENTS.md")
+        else:
+            log.error(f"{short(f)} does not contain exactly '@~/agent-config/AGENTS.md'")
+    for link in [h / "AGENTS.md" for h in CODEX_HOMES + OPENCODE_HOMES + PI_HOMES]:
         if link.is_symlink() and Path(os.readlink(link)) == AGENTS_MD:
             log.ok(f"{short(link)} -> AGENTS.md")
         else:
@@ -91,8 +89,6 @@ def check_policy(log: Log) -> None:
     log.section("Approval policy")
     ask = claude_ask_rules()
     for home in CLAUDE_HOMES:
-        if not installed(home):
-            continue
         have = set(load_json(home / "settings.json").get("permissions", {}).get("ask", []))
         missing = [r for r in ask if r not in have]
         if missing:
@@ -101,38 +97,38 @@ def check_policy(log: Log) -> None:
             log.ok(f"{short(home)}/settings.json: all {len(ask)} ask rules")
     text = codex_rules_text()
     for home in CODEX_HOMES:
-        if not installed(home):
-            continue
         f = home / "rules" / "agent-config.rules"
         if not f.exists() or f.read_text() != text:
             log.error(f"{short(f)} missing or stale (run bin/sync)")
             continue
-        r = subprocess.run(["codex", "execpolicy", "check", "--rules", str(f), "git", "push", "origin", "main"],
+        r = subprocess.run([PROGRAMS["codex"], "execpolicy", "check", "--rules", str(f), "git", "push", "origin", "main"],
                            capture_output=True, text=True)
         if r.returncode == 0 and "prompt" in r.stdout:
             log.ok(f"{short(f)}: `git push` -> prompt")
         else:
             log.error(f"{short(f)}: codex execpolicy check did not return prompt: {(r.stdout + r.stderr).strip()[:200]}")
-    if installed(OPENCODE):
-        bash = load_json(OPENCODE / "opencode.json").get("permission", {}).get("bash", {})
+    for home in OPENCODE_HOMES:
+        f = home / "opencode.json"
+        bash = load_json(f).get("permission", {}).get("bash", {})
         want = opencode_rules()
         if isinstance(bash, dict) and all(bash.get(k) == v for k, v in want.items()):
-            log.ok(f"~/.config/opencode/opencode.json: all {len(want)} permission.bash patterns")
+            log.ok(f"{short(f)}: all {len(want)} permission.bash patterns")
         else:
-            log.error("~/.config/opencode/opencode.json: permission.bash patterns missing (run bin/sync)")
-        if shutil.which("opencode"):
-            r = subprocess.run(["opencode", "debug", "config"], capture_output=True, text=True, timeout=60)
-            if r.returncode == 0 and "Configuration is invalid" not in r.stdout + r.stderr:
-                log.ok("opencode accepts its configuration")
-            else:
-                log.error(f"opencode rejects its configuration: {(r.stdout + r.stderr).strip()[:300]}")
-    if installed(PI):
-        guard = PI / "extensions" / PI_GUARD.name
+            log.error(f"{short(f)}: permission.bash patterns missing (run bin/sync)")
+        if home != HOME / ".config" / "opencode":
+            continue  # `opencode debug config` only reads the default folder
+        r = subprocess.run([PROGRAMS["opencode"], "debug", "config"], capture_output=True, text=True, timeout=60)
+        if r.returncode == 0 and "Configuration is invalid" not in r.stdout + r.stderr:
+            log.ok(f"opencode accepts {short(f)}")
+        else:
+            log.error(f"opencode rejects {short(f)}: {(r.stdout + r.stderr).strip()[:300]}")
+    for home in PI_HOMES:
+        guard = home / "extensions" / PI_GUARD.name
         if guard.is_symlink() and Path(os.readlink(guard)) == PI_GUARD:
             log.ok(f"{short(guard)} linked")
         else:
             log.error(f"{short(guard)} not linked (run bin/sync)")
-        extra = [p.name for p in (PI / "extensions").iterdir() if p.name != PI_GUARD.name] if (PI / "extensions").exists() else []
+        extra = [p.name for p in (home / "extensions").iterdir() if p.name != PI_GUARD.name] if (home / "extensions").exists() else []
         if extra:
             log.warn(f"other Pi extensions present: {', '.join(extra)}")
 
@@ -143,8 +139,7 @@ def check_mcp(log: Log) -> None:
     names = list(servers)
     views = {}
     for home in CLAUDE_HOMES:
-        if installed(home):
-            views[f"claude {short(home)}"] = set(load_json(home / ".claude.json").get("mcpServers", {}))
+        views[f"claude {short(home)}"] = set(load_json(home / ".claude.json").get("mcpServers", {}))
     for home in CODEX_HOMES:
         f = home / "config.toml"
         if f.exists():
@@ -152,10 +147,10 @@ def check_mcp(log: Log) -> None:
                 views[f"codex {short(home)}"] = set(tomllib.loads(f.read_text()).get("mcp_servers", {}))
             except tomllib.TOMLDecodeError as e:
                 log.error(f"{short(f)} is not valid TOML: {e}")
-    if installed(OPENCODE):
-        views["opencode"] = set(load_json(OPENCODE / "opencode.json").get("mcp", {}))
-    if installed(PI):
-        views["pi"] = set(load_json(PI / "mcp.json").get("mcpServers", {}))
+    for home in OPENCODE_HOMES:
+        views[f"opencode {short(home)}"] = set(load_json(home / "opencode.json").get("mcp", {}))
+    for home in PI_HOMES:
+        views[f"pi {short(home)}"] = set(load_json(home / "mcp.json").get("mcpServers", {}))
     for who, have in views.items():
         missing = [n for n in names if n not in have]
         if missing:
@@ -180,7 +175,7 @@ def check_repo(log: Log) -> None:
 def main() -> None:
     log = Log()
     print(f"agent-config doctor: {short(REPO)}")
-    report_harnesses(log)
+    report_harnesses(log, hint_unlisted=True)
     found = check_skills(log)
     check_links(log, found)
     check_instructions(log)

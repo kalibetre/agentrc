@@ -7,6 +7,8 @@ import re
 import shutil
 import subprocess
 import time
+import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 HOME = Path.home()
@@ -18,21 +20,13 @@ MCP = REPO / "mcp.json"
 LOCK = REPO / "skills.lock"
 PI_GUARD = REPO / "adapters" / "pi" / "agent-config-guard.ts"
 
-CLAUDE_HOMES = [HOME / ".claude", HOME / ".claude-work"]
-CODEX_HOMES = [HOME / ".codex", HOME / ".codex-work"]
-OPENCODE = HOME / ".config" / "opencode"
-PI = HOME / ".pi" / "agent"
 AGENTS_SKILLS = HOME / ".agents" / "skills"
 QUARANTINE = HOME / ".agents" / "quarantine"
 STATE = HOME / ".agents" / ".agent-config-state.json"
 ZSHENV = HOME / ".zshenv"
-# Every harness home. A harness is optional: sync and doctor skip one whose home is missing.
-HARNESS_HOMES = CLAUDE_HOMES + CODEX_HOMES + [OPENCODE, PI]
 
 # Entries a harness manages itself inside a skills folder we also link into.
 BUILTIN_SKILL_ENTRIES = {"synced", ".system", ".DS_Store"}
-# Folders we never link into; anything found there is moved to quarantine.
-FORBIDDEN_SKILL_DIRS = [OPENCODE / "skills", PI / "skills"]
 CLAUDE_IMPORT = "@~/agent-config/AGENTS.md\n"
 MARK_BEGIN = "# >>> agent-config >>>"
 MARK_END = "# <<< agent-config <<<"
@@ -70,18 +64,112 @@ def short(p: Path | str) -> str:
     return str(p).replace(str(HOME), "~", 1)
 
 
-def installed(home: Path) -> bool:
-    """A harness counts as installed when its home folder exists."""
-    return home.is_dir()
+# ---------------------------------------------------------------- harnesses
+# A harness is synced when its program is installed; each of its profiles (home
+# folders) is synced when the folder exists. Profiles come from PROFILES_FILE when
+# it lists the harness, otherwise from the standard home plus the harness's own
+# environment variable. See research/05-decisions.md D11 and D13.
+PROFILES_FILE = HOME / ".config" / "agent-config" / "profiles.toml"
 
 
-def report_harnesses(log: Log) -> None:
-    log.section("Harnesses")
-    for home in HARNESS_HOMES:
-        if installed(home):
-            log.ok(short(home))
+@dataclass(frozen=True)
+class Harness:
+    name: str
+    default_home: Path
+    home_env: str | None
+    # Install locations checked when the program is not on PATH (apps and
+    # launchers often run sync with a shorter PATH than an interactive shell).
+    known_paths: tuple[str, ...]
+
+
+HARNESSES = [
+    Harness("claude", HOME / ".claude", "CLAUDE_CONFIG_DIR",
+            ("~/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude")),
+    Harness("codex", HOME / ".codex", "CODEX_HOME",
+            ("/opt/homebrew/bin/codex", "/usr/local/bin/codex")),
+    Harness("opencode", HOME / ".config" / "opencode", None,
+            ("~/.opencode/bin/opencode", "/opt/homebrew/bin/opencode", "/usr/local/bin/opencode")),
+    Harness("pi", HOME / ".pi" / "agent", "PI_CODING_AGENT_DIR",
+            ("/opt/homebrew/bin/pi", "/usr/local/bin/pi")),
+]
+
+
+def find_program(h: Harness) -> str | None:
+    found = shutil.which(h.name)
+    if found:
+        return found
+    for p in h.known_paths:
+        path = Path(p).expanduser()
+        if path.is_file() and os.access(path, os.X_OK):
+            return str(path)
+    return None
+
+
+def _read_profiles_file() -> tuple[dict[str, list[Path]], list[str]]:
+    if not PROFILES_FILE.exists():
+        return {}, []
+    try:
+        data = tomllib.loads(PROFILES_FILE.read_text())
+    except tomllib.TOMLDecodeError as e:
+        return {}, [f"{short(PROFILES_FILE)} is not valid TOML: {e}"]
+    names = {h.name for h in HARNESSES}
+    out, errors = {}, []
+    for key, table in data.items():
+        profiles = table.get("profiles") if isinstance(table, dict) else None
+        if key not in names:
+            errors.append(f"{short(PROFILES_FILE)}: unknown harness [{key}] (known: {', '.join(sorted(names))})")
+        elif not isinstance(profiles, list) or not all(isinstance(x, str) for x in profiles):
+            errors.append(f"{short(PROFILES_FILE)}: [{key}] needs profiles = [\"~/path\", ...]")
         else:
-            log.skip(f"{short(home)} (not installed)")
+            out[key] = [Path(x).expanduser() for x in profiles]
+    return out, errors
+
+
+def configured_profiles(h: Harness, listed: dict[str, list[Path]]) -> list[Path]:
+    if h.name in listed:
+        return listed[h.name]
+    homes = [h.default_home]
+    env = os.environ.get(h.home_env or "")
+    if env and Path(env).expanduser() != h.default_home:
+        homes.append(Path(env).expanduser())
+    return homes
+
+
+_LISTED, PROFILE_ERRORS = _read_profiles_file()
+PROGRAMS = {h.name: find_program(h) for h in HARNESSES}
+CONFIGURED = {h.name: configured_profiles(h, _LISTED) for h in HARNESSES}
+# Profiles sync and doctor act on: program installed and folder present.
+ACTIVE = {name: [p for p in homes if PROGRAMS[name] and p.is_dir()] for name, homes in CONFIGURED.items()}
+CLAUDE_HOMES = ACTIVE["claude"]
+CODEX_HOMES = ACTIVE["codex"]
+OPENCODE_HOMES = ACTIVE["opencode"]
+PI_HOMES = ACTIVE["pi"]
+# Folders we never link into; anything found there is moved to quarantine.
+FORBIDDEN_SKILL_DIRS = [p / "skills" for p in CONFIGURED["opencode"] + CONFIGURED["pi"]]
+# Folder names that suggest an unlisted profile, with a file that marks one.
+PROFILE_HINTS = {"claude": (".claude[-.]*", "settings.json"), "codex": (".codex[-.]*", "config.toml")}
+
+
+def report_harnesses(log: Log, hint_unlisted: bool = False) -> None:
+    log.section(f"Harnesses ({short(PROFILES_FILE)}{'' if PROFILES_FILE.exists() else ': not present, using defaults'})")
+    for msg in PROFILE_ERRORS:
+        log.error(msg)
+    for h in HARNESSES:
+        program = PROGRAMS[h.name]
+        if not program:
+            log.skip(f"{h.name}: not installed")
+            continue
+        log.ok(f"{h.name}: {short(program)}")
+        for home in CONFIGURED[h.name]:
+            if home in ACTIVE[h.name]:
+                log.ok(f"  {short(home)}")
+            else:
+                log.skip(f"  {short(home)} (folder missing)")
+        if hint_unlisted and h.name in PROFILE_HINTS:
+            pattern, marker = PROFILE_HINTS[h.name]
+            for d in sorted(HOME.glob(pattern)):
+                if d.is_dir() and (d / marker).exists() and d not in CONFIGURED[h.name]:
+                    log.warn(f"{short(d)} looks like a {h.name} profile; add it to {short(PROFILES_FILE)} to sync it")
 
 
 # ---------------------------------------------------------------- skills

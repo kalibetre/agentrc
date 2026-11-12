@@ -7,7 +7,8 @@ description: Manage the user's shared agent configuration in ~/agent-config - th
 
 `~/agent-config` is the only place skills and global agent settings live.
 `bin/sync` links them into every harness, so one change reaches Claude Code
-(both profiles), Codex (both homes), OpenCode and Pi at once.
+(every profile), Codex (every home), OpenCode and Pi at once. Profiles beyond
+the defaults are listed per machine in `~/.config/agent-config/profiles.toml`.
 
 Never install a skill any other way: no `npx skills add`, no plugin or
 marketplace install, no copying into `~/.claude/skills`, `~/.agents/skills`,

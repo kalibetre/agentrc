@@ -53,15 +53,24 @@ harnesses without a Skill tool to open `~/.agents/skills/x/SKILL.md`. Fewer loca
 patches means cleaner `bin/update` merges.
 
 ## D11. Harnesses are optional
-A harness counts as installed when its home folder exists (`installed()` in
-`bin/agent_config.py`). `bin/sync` and `bin/doctor` skip a missing harness and
-print a `skip` line, instead of recreating its files or failing. Sync also drops
-the OpenCode `~/.zshenv` block once OpenCode is gone. Prompted by uninstalling
-OpenCode on 2026-11-13, which made doctor fail and sync recreate
-`~/.config/opencode/AGENTS.md`.
+A harness is used when its program is installed: on PATH, or at a known install
+path, since apps can run sync with a short PATH. Each of its profiles is used when
+its folder exists. Everything else is skipped and shown as `skip`, never created
+or failed. A home folder alone was the first signal, but uninstalls leave config
+folders behind. Sync also drops the OpenCode `~/.zshenv` block once OpenCode is
+gone. Prompted by uninstalling OpenCode on 2026-11-13.
 
 ## D12. `mcp.json` holds only servers every harness uses
 Context7 was dropped: no harness relied on it, and its missing key made every
 `bin/doctor` run warn. A server only some harnesses want is configured in that
 harness; sync only touches servers it has recorded as its own, so those entries
 are left alone. The `${secret:NAME}` mechanism (D9) stays for shared servers.
+
+## D13. Profiles are per machine, not in the repo
+Hardcoding `~/.claude-work` and `~/.codex-work` made the repo specific to this
+machine. Defaults are each harness's standard home plus its own variable
+(`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR`); OpenCode documents no
+such variable. Extra profiles go in `~/.config/agent-config/profiles.toml`,
+outside the repo; a listed harness uses exactly that list. Rejected: treating
+every `~/.claude-*` folder as a profile (catches backups) and reading shell
+aliases (fragile). Doctor only hints at unlisted profile-like folders.

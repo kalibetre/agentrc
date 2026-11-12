@@ -4,10 +4,13 @@ One source of truth for how coding agents work on this machine. Skills, global
 instructions, the approval policy and MCP servers live here, and `bin/sync`
 wires them into every harness I use:
 
-- **Claude Code**: both profiles, `~/.claude` and `~/.claude-work`
-- **Codex**: both homes, `~/.codex` and `~/.codex-work`
-- **OpenCode**
-- **Pi**
+- **Claude Code**: every profile (`~/.claude` by default)
+- **Codex**: every home (`~/.codex` by default)
+- **OpenCode** (`~/.config/opencode`)
+- **Pi** (`~/.pi/agent`)
+
+Which harnesses and profiles exist differs per machine; see [Harnesses and
+profiles](#harnesses-and-profiles).
 
 T3 Code drives the same homes, so it gets the same setup.
 
@@ -36,8 +39,31 @@ git clone <this repo> ~/agent-config      # must live at ~/agent-config
 Then open a new shell, which picks up `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS`, and
 restart running agent sessions.
 
-A harness that isn't installed (no home folder) is skipped by both commands and
-shown as `skip`. Install it later and re-run `bin/sync` to wire it in.
+## Harnesses and profiles
+
+Both commands start by listing what they found. A harness is used when its
+program is installed: on PATH, or in a known install location such as
+`~/.local/bin` or `/opt/homebrew/bin`. Each of its profiles (home folders) is
+used when the folder exists. Anything else is shown as `skip` and left alone;
+install it later and re-run `bin/sync`.
+
+With no setup, each harness has one profile: its standard home, plus the folder
+in its own variable if that is set (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+`PI_CODING_AGENT_DIR`). To use more profiles, such as a work account, list them
+in `~/.config/agent-config/profiles.toml`, which lives outside the repo because
+it differs per machine:
+
+```toml
+[claude]
+profiles = ["~/.claude", "~/.claude-work"]
+
+[codex]
+profiles = ["~/.codex", "~/.codex-work"]
+```
+
+A listed harness uses exactly those folders. `profiles.example.toml` is a
+starting point. `bin/doctor` warns about folders that look like an unlisted
+profile, such as a `~/.claude-*` folder with a `settings.json`.
 
 `bin/sync` only touches what it manages:
 - **Skill folders:** anything else it finds in a managed skill folder is moved to
@@ -177,6 +203,7 @@ skills/<name>/            one folder per skill: SKILL.md, optional references/, 
 skills.lock               provenance: source, upstream path, commit, local changes
 policy/ask.txt            commands that need approval
 mcp.json                  MCP servers
+profiles.example.toml     example for ~/.config/agent-config/profiles.toml (per machine)
 adapters/pi/              Pi extension enforcing the policy
 bin/                      sync, doctor, update (Python 3.11+ stdlib, no dependencies)
 research/                 why it's built this way (read before changing the shape)
