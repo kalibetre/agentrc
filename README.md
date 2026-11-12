@@ -132,7 +132,7 @@ description, and you can still call them by name.
 | Session | `handoff` | user | Compacts the session into a document another session or harness can continue from | mattpocock |
 | Meta | `setup-repo` | user | Gives a repo its `AGENTS.md`, a one-line `CLAUDE.md` and `docs/agents/` (issue tracker, domain docs) | local |
 | | `agent-config` | model | Manages this repo: add, update or remove skills, edit policy or MCP | local |
-| Tools | `fizzy` | model | Fizzy CLI (boards, cards) | local |
+| Tools | `fizzy` | model | Fizzy CLI (boards, cards) | basecamp/fizzy-cli |
 | | `varlock` | model | Environment variables and secrets with Varlock | dmno-dev/varlock |
 
 **Typical flows:**
@@ -252,5 +252,6 @@ Vendored skills keep their upstream licenses (copies in `LICENSES/`):
 - [mattpocock/skills](https://github.com/mattpocock/skills) (MIT)
 - [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) (MIT)
 - [t3dotgg/tstack](https://github.com/t3dotgg/tstack) (MIT)
-- [dmno-dev/varlock](https://github.com/dmno-dev/varlock)
+- [dmno-dev/varlock](https://github.com/dmno-dev/varlock) (MIT)
+- [basecamp/fizzy-cli](https://github.com/basecamp/fizzy-cli) (MIT)
 - The sources merged into `frontend-ui` are listed in its `NOTICE.md`.
