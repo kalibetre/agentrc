@@ -27,7 +27,7 @@ def sync_skills(log: Log) -> None:
         print("\nFix the skill errors above; nothing was linked.")
         sys.exit(1)
 
-    targets = [AGENTS_SKILLS] + [h / "skills" for h in CLAUDE_HOMES if h.exists()]
+    targets = [AGENTS_SKILLS] + [h / "skills" for h in CLAUDE_HOMES if installed(h)]
     for target in targets:
         target.mkdir(parents=True, exist_ok=True)
         for entry in sorted(target.iterdir()):
@@ -63,7 +63,7 @@ def sync_skills(log: Log) -> None:
 def sync_instructions(log: Log) -> None:
     log.section("Global instructions")
     for home in CLAUDE_HOMES:
-        if not home.exists():
+        if not installed(home):
             continue
         f = home / "CLAUDE.md"
         if f.is_file() and not f.is_symlink() and f.read_text() == CLAUDE_IMPORT:
@@ -79,8 +79,7 @@ def sync_instructions(log: Log) -> None:
         f.write_text(CLAUDE_IMPORT)
         log.change(f"wrote {short(f)} (@~/agent-config/AGENTS.md)")
 
-    links = [h / "AGENTS.md" for h in CODEX_HOMES if h.exists()]
-    links += [OPENCODE / "AGENTS.md", PI / "AGENTS.md"]
+    links = [h / "AGENTS.md" for h in CODEX_HOMES + [OPENCODE, PI] if installed(h)]
     for link in links:
         if link.is_symlink() and Path(os.readlink(link)) == AGENTS_MD:
             log.ok(f"{short(link)} -> AGENTS.md")
@@ -95,7 +94,7 @@ def sync_policy(log: Log, state: dict) -> None:
     ask = claude_ask_rules()
     for home in CLAUDE_HOMES:
         f = home / "settings.json"
-        if not home.exists():
+        if not installed(home):
             continue
         data = load_json(f)
         perms = data.setdefault("permissions", {})
@@ -112,7 +111,7 @@ def sync_policy(log: Log, state: dict) -> None:
 
     text = codex_rules_text()
     for home in CODEX_HOMES:
-        if not home.exists():
+        if not installed(home):
             continue
         f = home / "rules" / "agent-config.rules"
         if f.exists() and f.read_text() == text:
@@ -123,7 +122,7 @@ def sync_policy(log: Log, state: dict) -> None:
         log.change(f"wrote {short(f)}")
 
     f = OPENCODE / "opencode.json"
-    if OPENCODE.exists():
+    if installed(OPENCODE):
         data = load_json(f)
         before = json.dumps(data, sort_keys=True)
         data.pop("permissions", None)  # V2 array; the installed OpenCode (V1) refuses to start with it
@@ -143,7 +142,7 @@ def sync_policy(log: Log, state: dict) -> None:
         state["opencode_bash"] = list(new)
         state.pop("opencode_rules", None)
 
-    if PI.exists():
+    if installed(PI):
         ensure_symlink(PI / "extensions" / PI_GUARD.name, PI_GUARD, log)
         log.ok(f"{short(PI / 'extensions' / PI_GUARD.name)}")
 
@@ -160,7 +159,7 @@ def sync_mcp(log: Log, state: dict) -> None:
 
     # Claude Code: through its CLI, so running sessions don't race a direct file write.
     for home in CLAUDE_HOMES:
-        if not home.exists():
+        if not installed(home):
             continue
         env = dict(os.environ, CLAUDE_CONFIG_DIR=str(home))
         current = claude_mcp_current(home)
@@ -188,7 +187,7 @@ def sync_mcp(log: Log, state: dict) -> None:
     # Codex: one marked block in config.toml.
     for home in CODEX_HOMES:
         f = home / "config.toml"
-        if not home.exists():
+        if not installed(home):
             continue
         text = f.read_text() if f.exists() else ""
         body = strip_toml_tables(strip_marked_block(text), list(servers) + removed).rstrip("\n")
@@ -208,7 +207,7 @@ def sync_mcp(log: Log, state: dict) -> None:
 
     # OpenCode
     f = OPENCODE / "opencode.json"
-    if OPENCODE.exists():
+    if installed(OPENCODE):
         data = load_json(f)
         mcp = data.setdefault("mcp", {})
         before = json.dumps(mcp, sort_keys=True)
@@ -227,7 +226,7 @@ def sync_mcp(log: Log, state: dict) -> None:
 
     # Pi
     f = PI / "mcp.json"
-    if PI.exists():
+    if installed(PI):
         data = load_json(f)
         mcp = data.setdefault("mcpServers", {})
         before = json.dumps(mcp, sort_keys=True)
@@ -251,6 +250,12 @@ def sync_env(log: Log) -> None:
              "# OpenCode also scans ~/.claude/skills; the same skills already come from ~/.agents/skills.\n"
              f"export OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1\n{MARK_END}\n")
     text = ZSHENV.read_text() if ZSHENV.exists() else ""
+    if not installed(OPENCODE):
+        if MARK_BEGIN in text:
+            rest = strip_marked_block(text).rstrip("\n")
+            ZSHENV.write_text(rest + "\n" if rest else "")
+            log.change(f"{short(ZSHENV)}: removed OPENCODE_DISABLE_CLAUDE_CODE_SKILLS (OpenCode not installed)")
+        return
     if block in text:
         log.ok(f"{short(ZSHENV)}: OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1")
         return
@@ -262,6 +267,7 @@ def sync_env(log: Log) -> None:
 def main() -> None:
     log = Log()
     print(f"agent-config sync{' (dry run)' if DRY else ''}: {short(REPO)}")
+    report_harnesses(log)
     sync_skills(log)
     sync_instructions(log)
     if not DRY:

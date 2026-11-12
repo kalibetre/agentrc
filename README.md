@@ -36,6 +36,9 @@ git clone <this repo> ~/agent-config      # must live at ~/agent-config
 Then open a new shell, which picks up `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS`, and
 restart running agent sessions.
 
+A harness that isn't installed (no home folder) is skipped by both commands and
+shown as `skip`. Install it later and re-run `bin/sync` to wire it in.
+
 `bin/sync` only touches what it manages:
 - **Skill folders:** anything else it finds in a managed skill folder is moved to
   `~/.agents/quarantine/`, never deleted.

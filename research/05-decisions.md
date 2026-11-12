@@ -51,3 +51,11 @@ The repo never contains a secret; `bin/doctor` checks.
 mattpocock's `Call the Skill tool with "x"` stays as written; `AGENTS.md` tells
 harnesses without a Skill tool to open `~/.agents/skills/x/SKILL.md`. Fewer local
 patches means cleaner `bin/update` merges.
+
+## D11. Harnesses are optional
+A harness counts as installed when its home folder exists (`installed()` in
+`bin/agent_config.py`). `bin/sync` and `bin/doctor` skip a missing harness and
+print a `skip` line, instead of recreating its files or failing. Sync also drops
+the OpenCode `~/.zshenv` block once OpenCode is gone. Prompted by uninstalling
+OpenCode on 2026-11-13, which made doctor fail and sync recreate
+`~/.config/opencode/AGENTS.md`.

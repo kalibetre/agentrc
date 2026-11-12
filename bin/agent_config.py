@@ -26,6 +26,8 @@ AGENTS_SKILLS = HOME / ".agents" / "skills"
 QUARANTINE = HOME / ".agents" / "quarantine"
 STATE = HOME / ".agents" / ".agent-config-state.json"
 ZSHENV = HOME / ".zshenv"
+# Every harness home. A harness is optional: sync and doctor skip one whose home is missing.
+HARNESS_HOMES = CLAUDE_HOMES + CODEX_HOMES + [OPENCODE, PI]
 
 # Entries a harness manages itself inside a skills folder we also link into.
 BUILTIN_SKILL_ENTRIES = {"synced", ".system", ".DS_Store"}
@@ -57,12 +59,29 @@ class Log:
         self.errors.append(msg)
         print(f"  FAIL  {msg}")
 
+    def skip(self, msg: str) -> None:
+        print(f"  skip  {msg}")
+
     def section(self, title: str) -> None:
         print(f"\n{title}")
 
 
 def short(p: Path | str) -> str:
     return str(p).replace(str(HOME), "~", 1)
+
+
+def installed(home: Path) -> bool:
+    """A harness counts as installed when its home folder exists."""
+    return home.is_dir()
+
+
+def report_harnesses(log: Log) -> None:
+    log.section("Harnesses")
+    for home in HARNESS_HOMES:
+        if installed(home):
+            log.ok(short(home))
+        else:
+            log.skip(f"{short(home)} (not installed)")
 
 
 # ---------------------------------------------------------------- skills
