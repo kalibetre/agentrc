@@ -33,6 +33,7 @@ the agent loads on its own when the work matches. A ticket usually goes like thi
    - UI work also draws on `frontend-ui`, and `codebase-design` shapes module
      boundaries; both load on their own.
 5. **Ship: `/file-pr`.** It checks the diff matches the goal, runs the checks,
+   captures before/after screenshots when the change touches UI,
    and writes the title in the repo's style (ticket prefixes such as `AF-439:`
    included). It shows you the draft, pushes and files one PR after you say yes,
    then stops. It does not watch CI or merge.
@@ -180,7 +181,7 @@ description, and you can still call them by name.
 | | `diagnosing-bugs` | model | Reproduce, minimise, hypothesise, instrument, fix, add a regression test | mattpocock |
 | | `frontend-ui` | model | Production-quality, accessible React/Tailwind UI, with a review checklist | merged (see its `NOTICE.md`) |
 | Review & ship | `review` | model | Evidence-backed review: correctness, state and timing, architecture, security, performance | addyosmani (rewritten) |
-| | `file-pr` | user | Drafts a problem-first PR, shows it to you, pushes and files it after you say yes, then stops | tstack (rewritten) |
+| | `file-pr` | user | Drafts a problem-first PR with screenshot proof for UI changes, shows it to you, pushes and files it after you say yes, then stops | tstack (rewritten) |
 | Session | `handoff` | user | Compacts the session into a document another session or harness can continue from | mattpocock |
 | Meta | `setup-repo` | user | Gives a repo its `AGENTS.md`, a one-line `CLAUDE.md` and `docs/agents/` (issue tracker, domain docs) | local |
 | | `agentrc` | model | Manages this repo: add, update or remove skills, edit policy or MCP | local |
