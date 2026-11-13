@@ -1,5 +1,56 @@
 # agentrc
 
+One shared setup for the coding agents I use: the same skills, instructions,
+approval policy and MCP servers in every harness. The skills form a workflow,
+so that comes first; the rest of this file covers what is in the repo.
+
+## Working on a ticket
+
+Skills fall into two kinds. **User-invoked** skills you start by name (in Claude
+Code `/name`, in Codex `$name`, in Pi `/skill:name`). **Model-invoked** skills
+the agent loads on its own when the work matches. A ticket usually goes like this:
+
+1. **Once per repo: `/setup-repo`.** It creates `AGENTS.md`, a one-line
+   `CLAUDE.md` and the `docs/agents/` files the other skills read (where your
+   tickets and docs live). Skip it if the repo already has them.
+2. **If the ticket is fuzzy: `/grill-with-docs`.** The agent interviews you to
+   sharpen the plan and writes ADRs and glossary entries as you settle things.
+   If the work is bigger than one session, use `/wayfinder` instead: it maps
+   the open decisions as tickets on your tracker and resolves them one at a
+   time. A clear ticket can skip this step.
+3. **If the ticket is a bug: `diagnosing-bugs`.** It loads when you say "debug
+   this" or report something broken, and runs a diagnosis loop before anyone
+   touches code.
+4. **Build: `/implement <ticket>`.** The agent fetches the ticket from your
+   tracker and states its title, then chains:
+   - `incremental-implementation` cuts the work into thin slices, each built
+     and checked before the next.
+   - `tdd` works test-first where there is a sensible seam.
+   - It runs type checks and single tests as it goes, and the full suite once
+     at the end.
+   - `code-review-and-quality` reviews the result.
+   - It commits to the current branch.
+   - UI work also draws on `frontend-ui`, and `codebase-design` shapes module
+     boundaries; both load on their own.
+5. **Ship: `/file-pr`.** It checks the diff matches the goal, runs the checks,
+   and writes the title in the repo's style (ticket prefixes such as `AF-439:`
+   included). It shows you the draft, pushes and files one PR after you say yes,
+   then stops. It does not watch CI or merge.
+6. **Switching sessions: `/handoff`.** It compacts the conversation into a
+   document another agent can pick up.
+
+For a normal ticket that is `/implement TICKET-123`, then `/file-pr`; everything
+between is chained. The approval policy applies throughout: the agent asks
+before any `git push`, merge or force operation.
+
+Occasionally: `research` investigates a question against primary sources and
+saves cited findings in the repo; `/improve-codebase-architecture` scans for
+cleanup opportunities and grills you on the one you pick; `domain-modeling` and
+`varlock` load when you talk about terminology or secrets; `fizzy` is for Fizzy
+boards. The full list is under [The skills](#the-skills).
+
+## What is in this repo
+
 One source of truth for how coding agents work on this machine. Skills, global
 instructions, the approval policy and MCP servers live here, and `bin/sync`
 wires them into every harness I use:
@@ -136,12 +187,7 @@ description, and you can still call them by name.
 | Tools | `fizzy` | model | Fizzy CLI (boards, cards) | basecamp/fizzy-cli |
 | | `varlock` | model | Environment variables and secrets with Varlock | dmno-dev/varlock |
 
-**Typical flows:**
-- **New feature:**
-  1. `grill-with-docs` to pin down the plan.
-  2. `implement`. It slices the work with `incremental-implementation`, uses
-     `tdd` and finishes with `code-review-and-quality`.
-  3. `file-pr`.
+**Other flows** (the ticket flow is at the top of this file):
 - **Something larger than one session:** `wayfinder`.
 - **A bug:** describe it; `diagnosing-bugs` loads by itself.
 - **Architecture health, every few days:** `improve-codebase-architecture`.
