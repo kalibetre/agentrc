@@ -1,89 +1,83 @@
-#!/usr/bin/env python3
-"""Compare vendored skills with their upstream repos.
+#!/usr/bin/env node
+// Compare vendored skills with their upstream repos.
+//
+//   bin/update                 fetch every upstream in skills.lock, show what changed
+//   bin/update --diff <name>   print the full diff for one skill
+//   bin/update --apply <name>  replace skills/<name> with upstream and record the new commit
+//
+// Upstreams are cloned into a temporary directory and never executed.
+// After --apply, re-apply the local changes listed in skills.lock, then run
+// bin/sync, bin/doctor and commit.
+import { spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { LOCK, SKILLS, isDir, lockEntries, readText } from "./agentrc.mjs";
 
-  bin/update                 fetch every upstream in skills.lock, show what changed
-  bin/update --diff <name>   print the full diff for one skill
-  bin/update --apply <name>  replace skills/<name> with upstream and record the new commit
+const SKIP_SOURCES = new Set(["local", "merged"]);
+const USAGE = readText(new URL(import.meta.url).pathname).split("\n").slice(1, 11).map((l) => l.replace(/^\/\/ ?/, "")).join("\n");
 
-Upstreams are cloned into a temporary directory and never executed.
-After --apply, re-apply the local changes listed in skills.lock, then run
-bin/sync, bin/doctor and commit.
-"""
-from __future__ import annotations
+function fail(msg) {
+  console.error(msg);
+  process.exit(1);
+}
 
-import re
-import shutil
-import subprocess
-import sys
-import tempfile
-from pathlib import Path
+function git(...args) {
+  const r = spawnSync("git", args, { encoding: "utf8" });
+  if (r.status !== 0) fail(`git ${args.join(" ")} failed: ${(r.stderr ?? "").trim()}`);
+  return r.stdout.trim();
+}
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from agentrc import *  # noqa: E402,F403
+function clone(source, into) {
+  const dest = join(into, source.replaceAll("/", "__"));
+  if (!existsSync(dest)) git("clone", "-q", "--depth", "1", `https://github.com/${source}.git`, dest);
+  return { dest, head: git("-C", dest, "rev-parse", "HEAD") };
+}
 
-SKIP_SOURCES = {"local", "merged"}
+const diff = (a, b) => spawnSync("diff", ["-ru", "-x", ".git", a, b], { encoding: "utf8", maxBuffer: 1 << 28 }).stdout;
+const count = (s) => s.split("\n").length - 1;
 
+function main() {
+  const args = process.argv.slice(2);
+  let mode = "summary", target = null;
+  if (args.length === 2 && ["--diff", "--apply"].includes(args[0])) [mode, target] = [args[0].slice(2), args[1]];
+  else if (args.length) { console.log(USAGE); return 2; }
 
-def clone(source: str, into: Path) -> tuple[Path, str]:
-    dest = into / source.replace("/", "__")
-    if not dest.exists():
-        subprocess.run(["git", "clone", "-q", "--depth", "1", f"https://github.com/{source}.git", str(dest)],
-                       check=True)
-    head = subprocess.run(["git", "-C", str(dest), "rev-parse", "HEAD"], capture_output=True, text=True,
-                          check=True).stdout.strip()
-    return dest, head
+  const lock = lockEntries();
+  if (target && !(target in lock)) fail(`${target} is not in skills.lock`);
+  const tmp = mkdtempSync(join(tmpdir(), "agentrc-update-"));
+  try {
+    for (const [name, e] of Object.entries(lock)) {
+      if (target && name !== target) continue;
+      if (SKIP_SOURCES.has(e.source) || e.path === "-") {
+        if (target) fail(`${name} has source '${e.source}'; update it by hand`);
+        continue;
+      }
+      const { dest, head } = clone(e.source, tmp);
+      const upstream = join(dest, e.path);
+      if (!isDir(upstream)) { console.log(`  ??    ${name}: ${e.path} no longer exists in ${e.source}`); continue; }
+      const d = diff(join(SKILLS, name), upstream);
+      const changed = e.changes !== "-" ? `local changes: ${e.changes}` : "";
+      if (mode === "summary") {
+        const state = !d ? "up to date" : `differs (${count(d)} diff lines)`;
+        const moved = head.startsWith(e.commit) ? "" : ` upstream ${e.commit.slice(0, 7)} -> ${head.slice(0, 7)}`;
+        console.log(`  ${name.padEnd(31)} ${state}${moved} ${changed}`);
+      } else if (mode === "diff") {
+        console.log(d || `${name}: identical to upstream`);
+      } else {
+        rmSync(join(SKILLS, name), { recursive: true });
+        cpSync(upstream, join(SKILLS, name), { recursive: true, filter: (src) => ![".git", ".DS_Store"].includes(basename(src)) });
+        const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        writeFileSync(LOCK, readText(LOCK).replace(new RegExp(`^(${esc}\\s+\\S+\\s+\\S+\\s+)\\S+`, "m"), (_, pre) => pre + head));
+        console.log(`${name}: replaced with ${e.source}@${head.slice(0, 7)}`);
+        if (changed) console.log(`Re-apply the ${changed}`);
+        console.log("Then: bin/sync && bin/doctor && git commit");
+      }
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+  return 0;
+}
 
-
-def diff(a: Path, b: Path) -> str:
-    r = subprocess.run(["diff", "-ru", "-x", ".git", str(a), str(b)], capture_output=True, text=True)
-    return r.stdout
-
-
-def main() -> None:
-    args = sys.argv[1:]
-    mode, target = ("summary", None)
-    if args[:1] in (["--diff"], ["--apply"]) and len(args) == 2:
-        mode, target = args[0][2:], args[1]
-    elif args:
-        print(__doc__)
-        sys.exit(2)
-
-    lock = lock_entries()
-    if target and target not in lock:
-        sys.exit(f"{target} is not in skills.lock")
-    with tempfile.TemporaryDirectory(prefix="agentrc-update-") as tmp:
-        for name, e in lock.items():
-            if target and name != target:
-                continue
-            if e["source"] in SKIP_SOURCES or e["path"] == "-":
-                if target:
-                    sys.exit(f"{name} has source '{e['source']}'; update it by hand")
-                continue
-            repo, head = clone(e["source"], Path(tmp))
-            upstream = repo / e["path"]
-            if not upstream.is_dir():
-                print(f"  ??    {name}: {e['path']} no longer exists in {e['source']}")
-                continue
-            d = diff(SKILLS / name, upstream)
-            changed = "local changes: " + e["changes"] if e["changes"] != "-" else ""
-            if mode == "summary":
-                state = "up to date" if not d else f"differs ({d.count(chr(10))} diff lines)"
-                moved = "" if head.startswith(e["commit"]) else f" upstream {e['commit'][:7]} -> {head[:7]}"
-                print(f"  {name:31} {state}{moved} {changed}")
-            elif mode == "diff":
-                print(d or f"{name}: identical to upstream")
-            elif mode == "apply":
-                shutil.rmtree(SKILLS / name)
-                shutil.copytree(upstream, SKILLS / name, ignore=shutil.ignore_patterns(".git", ".DS_Store"))
-                text = LOCK.read_text()
-                text = re.sub(rf"^({re.escape(name)}\s+\S+\s+\S+\s+)\S+", lambda m: m.group(1) + head, text,
-                              count=1, flags=re.M)
-                LOCK.write_text(text)
-                print(f"{name}: replaced with {e['source']}@{head[:7]}")
-                if changed:
-                    print(f"Re-apply the {changed}")
-                print("Then: bin/sync && bin/doctor && git commit")
-
-
-if __name__ == "__main__":
-    main()
+process.exitCode = main();

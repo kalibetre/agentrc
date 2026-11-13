@@ -8,7 +8,7 @@ description: Manage the user's shared agent configuration in ~/agentrc - the sin
 `~/agentrc` is the only place skills and global agent settings live.
 `bin/sync` links them into every harness, so one change reaches Claude Code
 (every profile), Codex (every home), OpenCode and Pi at once. Profiles beyond
-the defaults are listed per machine in `~/.config/agentrc/profiles.toml`.
+the defaults are listed per machine in `~/.config/agentrc/profiles.json`.
 
 Never install a skill any other way: no `npx skills add`, no plugin or
 marketplace install, no copying into `~/.claude/skills`, `~/.agents/skills`,

@@ -1,190 +1,167 @@
-#!/usr/bin/env python3
-"""Verify every harness sees exactly what ~/agentrc defines. Read-only.
+#!/usr/bin/env node
+// Verify every harness sees exactly what ~/agentrc defines. Read-only.
+//
+// Exit code 0 when everything matches, 1 when something needs `bin/sync` or a fix.
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import {
+  AGENTS_MD, AGENTS_SKILLS, BUILTIN_SKILL_ENTRIES, CLAUDE_HOMES, CLAUDE_IMPORT, CODEX_HOMES,
+  FORBIDDEN_SKILL_DIRS, HOME, Log, OPENCODE_HOMES, PI_GUARD, PI_HOMES, PROGRAMS, REPO, SKILLS,
+  claudeAskRules, codexRulesText, frontmatter, isDir, isFile, isSymlink, linkTarget, listDir, loadJson,
+  lockEntries, mcpServers, opencodeRules, readText, reportHarnesses, short, skills, tomlMcpServerNames,
+  validateSkill, walkFiles,
+} from "./agentrc.mjs";
 
-Exit code 0 when everything matches, 1 when something needs `bin/sync` or a fix.
-"""
-from __future__ import annotations
+function checkSkills(log) {
+  log.section("Skills in the repo");
+  const found = skills();
+  for (const [name, path] of Object.entries(found)) validateSkill(name, path, log);
+  const lock = lockEntries();
+  for (const name of Object.keys(found)) if (!(name in lock)) log.error(`skills/${name}: no line in skills.lock`);
+  for (const name of Object.keys(lock)) {
+    if (!(name in found)) log.error(`skills.lock lists ${name}, but skills/${name} does not exist`);
+  }
+  const user = Object.entries(found).filter(([, p]) => frontmatter(join(p, "SKILL.md"))["disable-model-invocation"] === "true");
+  const n = Object.keys(found).length;
+  log.ok(`${n} skills (${n - user.length} model-invoked, ${user.length} user-invoked)`);
+  return found;
+}
 
-import json
-import os
-import re
-import subprocess
-import sys
-import tomllib
-from pathlib import Path
+function checkLinks(log, found) {
+  log.section("Skills each harness sees");
+  for (const target of [AGENTS_SKILLS, ...CLAUDE_HOMES.map((h) => join(h, "skills"))]) {
+    if (!isDir(target)) { log.error(`${short(target)} missing; run bin/sync`); continue; }
+    const names = new Set();
+    for (const name of listDir(target)) {
+      if (BUILTIN_SKILL_ENTRIES.has(name)) continue;
+      const entry = join(target, name);
+      const ours = isSymlink(entry) && dirname(linkTarget(entry)) === SKILLS;
+      if (!ours) log.error(`${short(entry)} is not managed by agentrc (bin/sync will quarantine it)`);
+      else if (!existsSync(entry)) log.error(`${short(entry)} is a broken link`);
+      names.add(name);
+    }
+    const missing = Object.keys(found).filter((n) => !names.has(n));
+    if (missing.length) log.error(`${short(target)}: missing ${missing.sort().join(", ")}`);
+    if (!missing.length && names.size === Object.keys(found).length && [...names].every((n) => n in found)) {
+      log.ok(`${short(target)}: exactly the ${names.size} repo skills`);
+    }
+  }
+  for (const d of FORBIDDEN_SKILL_DIRS) {
+    if (existsSync(d)) log.error(`${short(d)} exists; skills must only come from ~/agentrc (run bin/sync)`);
+  }
+  if (OPENCODE_HOMES.length && process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS !== "1") {
+    log.warn("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS is not set in this shell; OpenCode may list skills twice " +
+      "(open a new shell after bin/sync)");
+  }
+  for (const home of CLAUDE_HOMES) {
+    const on = Object.entries(loadJson(join(home, "settings.json")).enabledPlugins ?? {}).filter(([, v]) => v).map(([p]) => p);
+    if (on.length) log.warn(`${short(home)}: Claude plugins enabled: ${on.join(", ")} (plugins can bring their own skills)`);
+  }
+}
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from agentrc import *  # noqa: E402,F403
+function checkInstructions(log) {
+  log.section("Global instructions");
+  for (const home of CLAUDE_HOMES) {
+    const f = join(home, "CLAUDE.md");
+    if (isFile(f) && readText(f) === CLAUDE_IMPORT) log.ok(`${short(f)} imports AGENTS.md`);
+    else log.error(`${short(f)} does not contain exactly '@~/agentrc/AGENTS.md'`);
+  }
+  for (const link of [...CODEX_HOMES, ...OPENCODE_HOMES, ...PI_HOMES].map((h) => join(h, "AGENTS.md"))) {
+    if (isSymlink(link) && linkTarget(link) === AGENTS_MD) log.ok(`${short(link)} -> AGENTS.md`);
+    else log.error(`${short(link)} is not a link to ~/agentrc/AGENTS.md`);
+  }
+  const lines = readText(AGENTS_MD).split("\n").length - 1;
+  (lines <= 150 ? log.ok : log.warn).call(log, `AGENTS.md is ${lines} lines (target <= 150)`);
+}
 
+function checkPolicy(log) {
+  log.section("Approval policy");
+  const ask = claudeAskRules();
+  for (const home of CLAUDE_HOMES) {
+    const have = new Set(loadJson(join(home, "settings.json")).permissions?.ask ?? []);
+    const missing = ask.filter((r) => !have.has(r));
+    if (missing.length) log.error(`${short(home)}/settings.json: ${missing.length} ask rules missing (run bin/sync)`);
+    else log.ok(`${short(home)}/settings.json: all ${ask.length} ask rules`);
+  }
+  const text = codexRulesText();
+  for (const home of CODEX_HOMES) {
+    const f = join(home, "rules", "agentrc.rules");
+    if (!existsSync(f) || readText(f) !== text) { log.error(`${short(f)} missing or stale (run bin/sync)`); continue; }
+    const r = spawnSync(PROGRAMS.codex, ["execpolicy", "check", "--rules", f, "git", "push", "origin", "main"], { encoding: "utf8" });
+    if (r.status === 0 && r.stdout.includes("prompt")) log.ok(`${short(f)}: \`git push\` -> prompt`);
+    else log.error(`${short(f)}: codex execpolicy check did not return prompt: ${(r.stdout + r.stderr).trim().slice(0, 200)}`);
+  }
+  for (const home of OPENCODE_HOMES) {
+    const f = join(home, "opencode.json");
+    const bash = loadJson(f).permission?.bash ?? {};
+    const want = opencodeRules();
+    if (typeof bash === "object" && Object.entries(want).every(([k, v]) => bash[k] === v)) {
+      log.ok(`${short(f)}: all ${Object.keys(want).length} permission.bash patterns`);
+    } else log.error(`${short(f)}: permission.bash patterns missing (run bin/sync)`);
+    if (home !== join(HOME, ".config", "opencode")) continue;  // `opencode debug config` only reads the default folder
+    const r = spawnSync(PROGRAMS.opencode, ["debug", "config"], { encoding: "utf8", timeout: 60000 });
+    const out = (r.stdout ?? "") + (r.stderr ?? "");
+    if (r.status === 0 && !out.includes("Configuration is invalid")) log.ok(`opencode accepts ${short(f)}`);
+    else log.error(`opencode rejects ${short(f)}: ${out.trim().slice(0, 300)}`);
+  }
+  for (const home of PI_HOMES) {
+    const guard = join(home, "extensions", "agentrc-guard.ts");
+    if (isSymlink(guard) && linkTarget(guard) === PI_GUARD) log.ok(`${short(guard)} linked`);
+    else log.error(`${short(guard)} not linked (run bin/sync)`);
+    const extra = isDir(join(home, "extensions")) ? listDir(join(home, "extensions")).filter((n) => n !== "agentrc-guard.ts") : [];
+    if (extra.length) log.warn(`other Pi extensions present: ${extra.join(", ")}`);
+  }
+}
 
-def check_skills(log: Log) -> dict[str, Path]:
-    log.section("Skills in the repo")
-    found = skills()
-    for name, path in found.items():
-        validate_skill(name, path, log)
-    lock = lock_entries()
-    for name in found:
-        if name not in lock:
-            log.error(f"skills/{name}: no line in skills.lock")
-    for name in lock:
-        if name not in found:
-            log.error(f"skills.lock lists {name}, but skills/{name} does not exist")
-    user = [n for n, p in found.items() if frontmatter(p / "SKILL.md").get("disable-model-invocation") == "true"]
-    log.ok(f"{len(found)} skills ({len(found) - len(user)} model-invoked, {len(user)} user-invoked)")
-    return found
+function checkMcp(log) {
+  log.section("MCP servers");
+  const names = Object.keys(mcpServers(log).servers);
+  const views = {};
+  for (const home of CLAUDE_HOMES) {
+    views[`claude ${short(home)}`] = new Set(Object.keys(loadJson(join(home, ".claude.json")).mcpServers ?? {}));
+  }
+  for (const home of CODEX_HOMES) {
+    const f = join(home, "config.toml");
+    if (existsSync(f)) views[`codex ${short(home)}`] = tomlMcpServerNames(readText(f));
+  }
+  for (const home of OPENCODE_HOMES) {
+    views[`opencode ${short(home)}`] = new Set(Object.keys(loadJson(join(home, "opencode.json")).mcp ?? {}));
+  }
+  for (const home of PI_HOMES) {
+    views[`pi ${short(home)}`] = new Set(Object.keys(loadJson(join(home, "mcp.json")).mcpServers ?? {}));
+  }
+  for (const [who, have] of Object.entries(views)) {
+    const missing = names.filter((n) => !have.has(n));
+    if (missing.length) log.error(`${who}: missing ${missing.join(", ")} (run bin/sync)`);
+    else log.ok(`${who}: ${names.join(", ")}`);
+  }
+}
 
+function checkRepo(log) {
+  log.section("Repo");
+  if (existsSync(join(REPO, ".git"))) {
+    const r = spawnSync("git", ["-C", REPO, "status", "--porcelain"], { encoding: "utf8" });
+    if (r.stdout?.trim()) log.warn("uncommitted changes in ~/agentrc");
+    else log.ok("working tree clean");
+  }
+  for (const f of walkFiles(REPO)) {
+    if (/ctx7sk-[0-9a-f-]{8,}/.test(readText(f))) log.error(`${short(f)} contains a secret; secrets must not be committed`);
+  }
+}
 
-def check_links(log: Log, found: dict[str, Path]) -> None:
-    log.section("Skills each harness sees")
-    for target in [AGENTS_SKILLS] + [h / "skills" for h in CLAUDE_HOMES]:
-        if not target.is_dir():
-            log.error(f"{short(target)} missing; run bin/sync")
-            continue
-        names = set()
-        for entry in target.iterdir():
-            if entry.name in BUILTIN_SKILL_ENTRIES:
-                continue
-            ours = entry.is_symlink() and Path(os.readlink(entry)).parent == SKILLS
-            if not ours:
-                log.error(f"{short(entry)} is not managed by agentrc (bin/sync will quarantine it)")
-            elif not entry.exists():
-                log.error(f"{short(entry)} is a broken link")
-            names.add(entry.name)
-        missing = set(found) - names
-        if missing:
-            log.error(f"{short(target)}: missing {', '.join(sorted(missing))}")
-        if not missing and names == set(found):
-            log.ok(f"{short(target)}: exactly the {len(found)} repo skills")
-    for d in FORBIDDEN_SKILL_DIRS:
-        if d.exists():
-            log.error(f"{short(d)} exists; skills must only come from ~/agentrc (run bin/sync)")
-    if OPENCODE_HOMES and os.environ.get("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS") != "1":
-        log.warn("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS is not set in this shell; OpenCode may list skills twice "
-                 "(open a new shell after bin/sync)")
-    for home in CLAUDE_HOMES:
-        plugins = load_json(home / "settings.json").get("enabledPlugins", {})
-        on = [p for p, v in plugins.items() if v]
-        if on:
-            log.warn(f"{short(home)}: Claude plugins enabled: {', '.join(on)} (plugins can bring their own skills)")
+function main() {
+  const log = new Log();
+  console.log(`agentrc doctor: ${short(REPO)}`);
+  reportHarnesses(log, true);
+  const found = checkSkills(log);
+  checkLinks(log, found);
+  checkInstructions(log);
+  checkPolicy(log);
+  checkMcp(log);
+  checkRepo(log);
+  console.log(`\n${log.errors.length} error(s), ${log.warnings.length} warning(s).`);
+  return log.errors.length ? 1 : 0;
+}
 
-
-def check_instructions(log: Log) -> None:
-    log.section("Global instructions")
-    for home in CLAUDE_HOMES:
-        f = home / "CLAUDE.md"
-        if f.is_file() and f.read_text() == CLAUDE_IMPORT:
-            log.ok(f"{short(f)} imports AGENTS.md")
-        else:
-            log.error(f"{short(f)} does not contain exactly '@~/agentrc/AGENTS.md'")
-    for link in [h / "AGENTS.md" for h in CODEX_HOMES + OPENCODE_HOMES + PI_HOMES]:
-        if link.is_symlink() and Path(os.readlink(link)) == AGENTS_MD:
-            log.ok(f"{short(link)} -> AGENTS.md")
-        else:
-            log.error(f"{short(link)} is not a link to ~/agentrc/AGENTS.md")
-    lines = AGENTS_MD.read_text().count("\n")
-    (log.ok if lines <= 150 else log.warn)(f"AGENTS.md is {lines} lines (target <= 150)")
-
-
-def check_policy(log: Log) -> None:
-    log.section("Approval policy")
-    ask = claude_ask_rules()
-    for home in CLAUDE_HOMES:
-        have = set(load_json(home / "settings.json").get("permissions", {}).get("ask", []))
-        missing = [r for r in ask if r not in have]
-        if missing:
-            log.error(f"{short(home)}/settings.json: {len(missing)} ask rules missing (run bin/sync)")
-        else:
-            log.ok(f"{short(home)}/settings.json: all {len(ask)} ask rules")
-    text = codex_rules_text()
-    for home in CODEX_HOMES:
-        f = home / "rules" / "agentrc.rules"
-        if not f.exists() or f.read_text() != text:
-            log.error(f"{short(f)} missing or stale (run bin/sync)")
-            continue
-        r = subprocess.run([PROGRAMS["codex"], "execpolicy", "check", "--rules", str(f), "git", "push", "origin", "main"],
-                           capture_output=True, text=True)
-        if r.returncode == 0 and "prompt" in r.stdout:
-            log.ok(f"{short(f)}: `git push` -> prompt")
-        else:
-            log.error(f"{short(f)}: codex execpolicy check did not return prompt: {(r.stdout + r.stderr).strip()[:200]}")
-    for home in OPENCODE_HOMES:
-        f = home / "opencode.json"
-        bash = load_json(f).get("permission", {}).get("bash", {})
-        want = opencode_rules()
-        if isinstance(bash, dict) and all(bash.get(k) == v for k, v in want.items()):
-            log.ok(f"{short(f)}: all {len(want)} permission.bash patterns")
-        else:
-            log.error(f"{short(f)}: permission.bash patterns missing (run bin/sync)")
-        if home != HOME / ".config" / "opencode":
-            continue  # `opencode debug config` only reads the default folder
-        r = subprocess.run([PROGRAMS["opencode"], "debug", "config"], capture_output=True, text=True, timeout=60)
-        if r.returncode == 0 and "Configuration is invalid" not in r.stdout + r.stderr:
-            log.ok(f"opencode accepts {short(f)}")
-        else:
-            log.error(f"opencode rejects {short(f)}: {(r.stdout + r.stderr).strip()[:300]}")
-    for home in PI_HOMES:
-        guard = home / "extensions" / PI_GUARD.name
-        if guard.is_symlink() and Path(os.readlink(guard)) == PI_GUARD:
-            log.ok(f"{short(guard)} linked")
-        else:
-            log.error(f"{short(guard)} not linked (run bin/sync)")
-        extra = [p.name for p in (home / "extensions").iterdir() if p.name != PI_GUARD.name] if (home / "extensions").exists() else []
-        if extra:
-            log.warn(f"other Pi extensions present: {', '.join(extra)}")
-
-
-def check_mcp(log: Log) -> None:
-    log.section("MCP servers")
-    servers, _ = mcp_servers(log)
-    names = list(servers)
-    views = {}
-    for home in CLAUDE_HOMES:
-        views[f"claude {short(home)}"] = set(load_json(home / ".claude.json").get("mcpServers", {}))
-    for home in CODEX_HOMES:
-        f = home / "config.toml"
-        if f.exists():
-            try:
-                views[f"codex {short(home)}"] = set(tomllib.loads(f.read_text()).get("mcp_servers", {}))
-            except tomllib.TOMLDecodeError as e:
-                log.error(f"{short(f)} is not valid TOML: {e}")
-    for home in OPENCODE_HOMES:
-        views[f"opencode {short(home)}"] = set(load_json(home / "opencode.json").get("mcp", {}))
-    for home in PI_HOMES:
-        views[f"pi {short(home)}"] = set(load_json(home / "mcp.json").get("mcpServers", {}))
-    for who, have in views.items():
-        missing = [n for n in names if n not in have]
-        if missing:
-            log.error(f"{who}: missing {', '.join(missing)} (run bin/sync)")
-        else:
-            log.ok(f"{who}: {', '.join(names)}")
-
-
-def check_repo(log: Log) -> None:
-    log.section("Repo")
-    if (REPO / ".git").exists():
-        r = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain"], capture_output=True, text=True)
-        if r.stdout.strip():
-            log.warn("uncommitted changes in ~/agentrc")
-        else:
-            log.ok("working tree clean")
-    for f in REPO.rglob("*"):
-        if f.is_file() and ".git" not in f.parts and re.search(r"ctx7sk-[0-9a-f-]{8,}", f.read_text(errors="ignore")):
-            log.error(f"{short(f)} contains a secret; secrets must not be committed")
-
-
-def main() -> None:
-    log = Log()
-    print(f"agentrc doctor: {short(REPO)}")
-    report_harnesses(log, hint_unlisted=True)
-    found = check_skills(log)
-    check_links(log, found)
-    check_instructions(log)
-    check_policy(log)
-    check_mcp(log)
-    check_repo(log)
-    print(f"\n{len(log.errors)} error(s), {len(log.warnings)} warning(s).")
-    sys.exit(1 if log.errors else 0)
-
-
-if __name__ == "__main__":
-    main()
+process.exitCode = main();

@@ -1,0 +1,4 @@
+{
+  "claude": ["~/.claude", "~/.claude-work"],
+  "codex": ["~/.codex", "~/.codex-work"]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "agentrc",
+  "private": true,
+  "type": "module",
+  "description": "Shared agent configuration. No dependencies; bin/* run on Node 20+.",
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test test/" }
+}

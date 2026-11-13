@@ -30,6 +30,8 @@ Change something here once, run `bin/sync`, and every harness behaves the same.
 
 ## Quick start
 
+Needs Node 20 or newer and nothing else; there is nothing to install.
+
 ```sh
 git clone https://github.com/kalibetre/agentrc ~/agentrc      # must live at ~/agentrc
 ~/agentrc/bin/sync                   # link everything (safe to re-run)
@@ -50,18 +52,17 @@ install it later and re-run `bin/sync`.
 With no setup, each harness has one profile: its standard home, plus the folder
 in its own variable if that is set (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
 `PI_CODING_AGENT_DIR`). To use more profiles, such as a work account, list them
-in `~/.config/agentrc/profiles.toml`, which lives outside the repo because
+in `~/.config/agentrc/profiles.json`, which lives outside the repo because
 it differs per machine:
 
-```toml
-[claude]
-profiles = ["~/.claude", "~/.claude-work"]
-
-[codex]
-profiles = ["~/.codex", "~/.codex-work"]
+```json
+{
+  "claude": ["~/.claude", "~/.claude-work"],
+  "codex": ["~/.codex", "~/.codex-work"]
+}
 ```
 
-A listed harness uses exactly those folders. `profiles.example.toml` is a
+A listed harness uses exactly those folders. `profiles.example.json` is a
 starting point. `bin/doctor` warns about folders that look like an unlisted
 profile, such as a `~/.claude-*` folder with a `settings.json`.
 
@@ -203,9 +204,10 @@ skills/<name>/            one folder per skill: SKILL.md, optional references/, 
 skills.lock               provenance: source, upstream path, commit, local changes
 policy/ask.txt            commands that need approval
 mcp.json                  MCP servers
-profiles.example.toml     example for ~/.config/agentrc/profiles.toml (per machine)
+profiles.example.json     example for ~/.config/agentrc/profiles.json (per machine)
 adapters/pi/              Pi extension enforcing the policy
-bin/                      sync, doctor, update (Python 3.11+ stdlib, no dependencies)
+bin/                      sync, doctor, update (Node 20+, no dependencies)
+test/                     smoke test: `node --test test/`
 research/                 why it's built this way (read before changing the shape)
 ```
 

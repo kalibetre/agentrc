@@ -1,287 +1,287 @@
-#!/usr/bin/env python3
-"""Link ~/agentrc into every harness. Safe to re-run; only touches what it manages.
+#!/usr/bin/env node
+// Link ~/agentrc into every harness. Safe to re-run; only touches what it manages.
+//
+//   bin/sync            apply everything
+//   bin/sync --dry-run  show what would change (skills and instructions only)
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import {
+  AGENTS_MD, AGENTS_SKILLS, BUILTIN_SKILL_ENTRIES, CLAUDE_HOMES, CLAUDE_IMPORT, CODEX_HOMES,
+  FORBIDDEN_SKILL_DIRS, LEGACY_CLAUDE_IMPORT, LEGACY_CODEX_RULES, LEGACY_PI_GUARD, Log, MARK_BEGIN, MARK_END,
+  OPENCODE_HOMES, PI_GUARD, PI_HOMES, PROFILES_FILE, PROGRAMS, REPO, SKILLS, ZSHENV, canon, claudeAskRules,
+  codexRulesText, ensureSymlink, isFile, isSymlink, lexists, linkTarget, listDir, loadJson, loadState,
+  mcpServers, opencodeRules, quarantine, readText, reportHarnesses, saveJson, saveState, short,
+  skills, stripMarkedBlock, stripTomlTables, tomlStr, validateSkill,
+} from "./agentrc.mjs";
 
-  bin/sync            apply everything
-  bin/sync --dry-run  show what would change (skills and instructions only)
-"""
-from __future__ import annotations
+const DRY = process.argv.includes("--dry-run");
 
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
+function syncSkills(log) {
+  log.section("Skills");
+  const found = skills();
+  for (const [name, path] of Object.entries(found)) validateSkill(name, path, log);
+  if (log.errors.length) {
+    console.log("\nFix the skill errors above; nothing was linked.");
+    return false;
+  }
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from agentrc import *  # noqa: E402,F403
+  for (const target of [AGENTS_SKILLS, ...CLAUDE_HOMES.map((h) => join(h, "skills"))]) {
+    mkdirSync(target, { recursive: true });
+    for (const name of listDir(target)) {
+      const entry = join(target, name);
+      if (BUILTIN_SKILL_ENTRIES.has(name)) continue;
+      const ours = isSymlink(entry) && dirname(linkTarget(entry)) === SKILLS;
+      if (ours && name in found) continue;
+      if (DRY) log.change(`would remove/quarantine ${short(entry)}`);
+      else if (isSymlink(entry)) {
+        unlinkSync(entry);
+        log.change(`removed stale link ${short(entry)}`);
+      } else quarantine(entry, log, "not managed by agentrc");
+    }
+    for (const [name, path] of Object.entries(found)) {
+      const link = join(target, name);
+      if (!(isSymlink(link) && linkTarget(link) === path)) {
+        if (DRY) log.change(`would link ${short(link)}`);
+        else ensureSymlink(link, path, log);
+      }
+    }
+    log.ok(`${short(target)}: ${Object.keys(found).length} skills`);
+  }
 
-DRY = "--dry-run" in sys.argv
+  for (const d of FORBIDDEN_SKILL_DIRS) {
+    if (lexists(d) && !DRY) {
+      for (const name of listDir(d)) quarantine(join(d, name), log, "harness-specific skills folder; use ~/agentrc/skills");
+      rmdirSync(d);
+      log.change(`removed ${short(d)}`);
+    }
+  }
+  return true;
+}
 
+function syncInstructions(log) {
+  log.section("Global instructions");
+  for (const home of CLAUDE_HOMES) {
+    const f = join(home, "CLAUDE.md");
+    if (isFile(f) && !isSymlink(f) && readText(f) === CLAUDE_IMPORT) {
+      log.ok(`${short(f)} imports AGENTS.md`);
+      continue;
+    }
+    if (DRY) { log.change(`would write ${short(f)}`); continue; }
+    if (isFile(f) && readText(f) === LEGACY_CLAUDE_IMPORT) {
+      // written by this tool under its old name; nothing to keep
+    } else if (lexists(f)) {
+      const backup = join(home, "CLAUDE.md.pre-agentrc");
+      renameSync(f, backup);
+      log.change(`kept old ${short(f)} as ${short(backup)}`);
+    }
+    writeFileSync(f, CLAUDE_IMPORT);
+    log.change(`wrote ${short(f)} (@~/agentrc/AGENTS.md)`);
+  }
 
-def sync_skills(log: Log) -> None:
-    log.section("Skills")
-    found = skills()
-    for name, path in found.items():
-        validate_skill(name, path, log)
-    if log.errors:
-        print("\nFix the skill errors above; nothing was linked.")
-        sys.exit(1)
+  for (const link of [...CODEX_HOMES, ...OPENCODE_HOMES, ...PI_HOMES].map((h) => join(h, "AGENTS.md"))) {
+    if (isSymlink(link) && linkTarget(link) === AGENTS_MD) log.ok(`${short(link)} -> AGENTS.md`);
+    else if (DRY) log.change(`would link ${short(link)}`);
+    else ensureSymlink(link, AGENTS_MD, log);
+  }
+}
 
-    targets = [AGENTS_SKILLS] + [h / "skills" for h in CLAUDE_HOMES]
-    for target in targets:
-        target.mkdir(parents=True, exist_ok=True)
-        for entry in sorted(target.iterdir()):
-            if entry.name in BUILTIN_SKILL_ENTRIES:
-                continue
-            ours = entry.is_symlink() and Path(os.readlink(entry)).parent == SKILLS
-            if ours and entry.name in found:
-                continue
-            if DRY:
-                log.change(f"would remove/quarantine {short(entry)}")
-            elif entry.is_symlink():
-                entry.unlink()
-                log.change(f"removed stale link {short(entry)}")
-            else:
-                quarantine(entry, log, "not managed by agentrc")
-        for name, path in found.items():
-            link = target / name
-            if not (link.is_symlink() and Path(os.readlink(link)) == path):
-                if DRY:
-                    log.change(f"would link {short(link)}")
-                else:
-                    ensure_symlink(link, path, log)
-        log.ok(f"{short(target)}: {len(found)} skills")
+function syncPolicy(log, state) {
+  log.section("Approval policy (policy/ask.txt)");
+  const ask = claudeAskRules();
+  for (const home of CLAUDE_HOMES) {
+    const f = join(home, "settings.json");
+    const data = loadJson(f);
+    data.permissions ??= {};
+    const perms = data.permissions;
+    const previous = new Set(state.claude_ask ?? []);
+    const current = (perms.ask ?? []).filter((r) => !previous.has(r));
+    const merged = [...current, ...ask.filter((r) => !current.includes(r))];
+    if (canon(merged) !== canon(perms.ask)) {
+      perms.ask = merged;
+      saveJson(f, data);
+      log.change(`${short(f)}: permissions.ask now has ${ask.length} agentrc rules`);
+    } else log.ok(`${short(f)}: ${ask.length} ask rules`);
+  }
+  state.claude_ask = ask;
 
-    for d in FORBIDDEN_SKILL_DIRS:
-        if d.exists() and not DRY:
-            for entry in sorted(d.iterdir()):
-                quarantine(entry, log, "harness-specific skills folder; use ~/agentrc/skills")
-            d.rmdir()
-            log.change(f"removed {short(d)}")
+  const text = codexRulesText();
+  for (const home of CODEX_HOMES) {
+    const legacy = join(home, "rules", LEGACY_CODEX_RULES);
+    if (existsSync(legacy)) {
+      unlinkSync(legacy);
+      log.change(`removed ${short(legacy)} (old name)`);
+    }
+    const f = join(home, "rules", "agentrc.rules");
+    if (existsSync(f) && readText(f) === text) { log.ok(short(f)); continue; }
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(f, text);
+    log.change(`wrote ${short(f)}`);
+  }
 
+  for (const home of OPENCODE_HOMES) {
+    const f = join(home, "opencode.json");
+    const data = loadJson(f);
+    const before = canon(data);
+    delete data.permissions;  // V2 array; the installed OpenCode (V1) refuses to start with it
+    data.permission ??= {};
+    const perm = data.permission;
+    if (typeof perm.bash === "string") perm.bash = { "*": perm.bash };
+    perm.bash ??= {};
+    for (const pattern of state.opencode_bash ?? []) delete perm.bash[pattern];
+    const added = opencodeRules();
+    Object.assign(perm.bash, added);
+    const count = Object.keys(added).length;
+    if (canon(data) !== before) {
+      saveJson(f, data);
+      log.change(`${short(f)}: permission.bash has ${count} agentrc patterns`);
+    } else log.ok(`${short(f)}: ${count} permission.bash patterns`);
+    state.opencode_bash = Object.keys(added);
+    delete state.opencode_rules;
+  }
 
-def sync_instructions(log: Log) -> None:
-    log.section("Global instructions")
-    for home in CLAUDE_HOMES:
-        f = home / "CLAUDE.md"
-        if f.is_file() and not f.is_symlink() and f.read_text() == CLAUDE_IMPORT:
-            log.ok(f"{short(f)} imports AGENTS.md")
-            continue
-        if DRY:
-            log.change(f"would write {short(f)}")
-            continue
-        if f.is_file() and f.read_text() == LEGACY_CLAUDE_IMPORT:
-            pass  # written by this tool under its old name; nothing to keep
-        elif f.exists() or f.is_symlink():
-            backup = f.with_name("CLAUDE.md.pre-agentrc")
-            os.replace(f, backup)
-            log.change(f"kept old {short(f)} as {short(backup)}")
-        f.write_text(CLAUDE_IMPORT)
-        log.change(f"wrote {short(f)} (@~/agentrc/AGENTS.md)")
+  for (const home of PI_HOMES) {
+    const legacy = join(home, "extensions", LEGACY_PI_GUARD);
+    if (isSymlink(legacy)) {
+      unlinkSync(legacy);
+      log.change(`removed ${short(legacy)} (old name)`);
+    }
+    const guard = join(home, "extensions", "agentrc-guard.ts");
+    ensureSymlink(guard, PI_GUARD, log);
+    log.ok(short(guard));
+  }
+}
 
-    links = [h / "AGENTS.md" for h in CODEX_HOMES + OPENCODE_HOMES + PI_HOMES]
-    for link in links:
-        if link.is_symlink() and Path(os.readlink(link)) == AGENTS_MD:
-            log.ok(f"{short(link)} -> AGENTS.md")
-        elif DRY:
-            log.change(f"would link {short(link)}")
-        else:
-            ensure_symlink(link, AGENTS_MD, log)
+function syncMcp(log, state) {
+  log.section("MCP servers (mcp.json)");
+  const { servers, skipped } = mcpServers(log);
+  const names = Object.keys(servers).join(", ");
+  const previous = new Set(state.mcp ?? []);
+  const removed = [...previous].filter((n) => !(n in servers) && !skipped.includes(n)).sort();
+  const claude = (home, ...args) => spawnSync(PROGRAMS.claude, args,
+    { env: { ...process.env, CLAUDE_CONFIG_DIR: home }, encoding: "utf8" });
 
+  // Claude Code: through its CLI, so running sessions don't race a direct file write.
+  for (const home of CLAUDE_HOMES) {
+    const current = loadJson(join(home, ".claude.json")).mcpServers ?? {};
+    for (const name of removed) {
+      if (name in current) {
+        claude(home, "mcp", "remove", "-s", "user", name);
+        log.change(`claude ${short(home)}: removed ${name}`);
+      }
+    }
+    for (const [name, spec] of Object.entries(servers)) {
+      const want = { type: "http", url: spec.url, ...(Object.keys(spec.headers).length ? { headers: spec.headers } : {}) };
+      const have = current[name];
+      if (have && canon(Object.fromEntries(Object.keys(want).map((k) => [k, have[k] ?? null]))) === canon(want)) continue;
+      if (have) claude(home, "mcp", "remove", "-s", "user", name);
+      const args = ["mcp", "add", "-s", "user", "--transport", "http", name, spec.url];
+      for (const [k, v] of Object.entries(spec.headers)) args.push("-H", `${k}: ${v}`);
+      const r = claude(home, ...args);
+      if (r.status === 0) log.change(`claude ${short(home)}: ${name}`);
+      else log.error(`claude ${short(home)}: adding ${name} failed: ${(r.stderr ?? "").trim().slice(0, 200)}`);
+    }
+    log.ok(`claude ${short(home)}: ${names}`);
+  }
 
-def sync_policy(log: Log, state: dict) -> None:
-    log.section("Approval policy (policy/ask.txt)")
-    ask = claude_ask_rules()
-    for home in CLAUDE_HOMES:
-        f = home / "settings.json"
-        data = load_json(f)
-        perms = data.setdefault("permissions", {})
-        previous = set(state.get("claude_ask", []))
-        current = [r for r in perms.get("ask", []) if r not in previous]
-        merged = current + [r for r in ask if r not in current]
-        if merged != perms.get("ask"):
-            perms["ask"] = merged
-            save_json(f, data)
-            log.change(f"{short(f)}: permissions.ask now has {len(ask)} agentrc rules")
-        else:
-            log.ok(f"{short(f)}: {len(ask)} ask rules")
-    state["claude_ask"] = ask
+  // Codex: one marked block in config.toml.
+  for (const home of CODEX_HOMES) {
+    const f = join(home, "config.toml");
+    const text = existsSync(f) ? readText(f) : "";
+    const body = stripTomlTables(stripMarkedBlock(text), [...Object.keys(servers), ...removed]).replace(/\n+$/, "");
+    const block = [MARK_BEGIN, "# MCP servers from ~/agentrc/mcp.json. Edit there, then run bin/sync."];
+    for (const [name, spec] of Object.entries(servers)) {
+      block.push("", `[mcp_servers.${name}]`, `url = ${tomlStr(spec.url)}`);
+      const pairs = Object.entries(spec.headers).map(([k, v]) => `${tomlStr(k)} = ${tomlStr(v)}`).join(", ");
+      if (pairs) block.push(`http_headers = { ${pairs} }`);
+    }
+    block.push(MARK_END);
+    const next = `${body}\n\n${block.join("\n")}\n`;
+    if (next !== text) {
+      writeFileSync(f, next);
+      log.change(`${short(f)}: mcp_servers ${names}`);
+    } else log.ok(`${short(f)}: ${names}`);
+  }
 
-    text = codex_rules_text()
-    for home in CODEX_HOMES:
-        legacy = home / "rules" / LEGACY_CODEX_RULES
-        if legacy.exists():
-            legacy.unlink()
-            log.change(f"removed {short(legacy)} (old name)")
-        f = home / "rules" / "agentrc.rules"
-        if f.exists() and f.read_text() == text:
-            log.ok(f"{short(f)}")
-            continue
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(text)
-        log.change(f"wrote {short(f)}")
+  // OpenCode
+  for (const home of OPENCODE_HOMES) {
+    const f = join(home, "opencode.json");
+    const data = loadJson(f);
+    data.mcp ??= {};
+    const before = canon(data.mcp);
+    for (const name of removed) delete data.mcp[name];
+    for (const [name, spec] of Object.entries(servers)) {
+      data.mcp[name] = { type: "remote", url: spec.url, enabled: true,
+        ...(Object.keys(spec.headers).length ? { headers: spec.headers } : {}) };
+    }
+    if (canon(data.mcp) !== before) {
+      saveJson(f, data);
+      log.change(`${short(f)}: mcp ${names}`);
+    } else log.ok(`${short(f)}: ${names}`);
+  }
 
-    for home in OPENCODE_HOMES:
-        f = home / "opencode.json"
-        data = load_json(f)
-        before = json.dumps(data, sort_keys=True)
-        data.pop("permissions", None)  # V2 array; the installed OpenCode (V1) refuses to start with it
-        perm = data.setdefault("permission", {})
-        if isinstance(perm.get("bash"), str):
-            perm["bash"] = {"*": perm["bash"]}
-        bash = perm.setdefault("bash", {})
-        for pattern in state.get("opencode_bash", []):
-            bash.pop(pattern, None)
-        new = opencode_rules()
-        bash.update(new)
-        if json.dumps(data, sort_keys=True) != before:
-            save_json(f, data)
-            log.change(f"{short(f)}: permission.bash has {len(new)} agentrc patterns")
-        else:
-            log.ok(f"{short(f)}: {len(new)} permission.bash patterns")
-        state["opencode_bash"] = list(new)
-        state.pop("opencode_rules", None)
+  // Pi
+  for (const home of PI_HOMES) {
+    const f = join(home, "mcp.json");
+    const data = loadJson(f);
+    data.mcpServers ??= {};
+    const before = canon(data.mcpServers);
+    for (const name of removed) delete data.mcpServers[name];
+    for (const [name, spec] of Object.entries(servers)) {
+      data.mcpServers[name] = { url: spec.url, ...(Object.keys(spec.headers).length ? { headers: spec.headers } : {}) };
+    }
+    if (canon(data.mcpServers) !== before) {
+      saveJson(f, data);
+      chmodSync(f, 0o600);
+      log.change(`${short(f)}: mcpServers ${names}`);
+    } else log.ok(`${short(f)}: ${names}`);
+  }
 
-    for home in PI_HOMES:
-        legacy = home / "extensions" / LEGACY_PI_GUARD
-        if legacy.is_symlink():
-            legacy.unlink()
-            log.change(f"removed {short(legacy)} (old name)")
-        ensure_symlink(home / "extensions" / PI_GUARD.name, PI_GUARD, log)
-        log.ok(f"{short(home / 'extensions' / PI_GUARD.name)}")
+  state.mcp = [...new Set([...Object.keys(servers), ...[...previous].filter((n) => skipped.includes(n))])].sort();
+}
 
+function syncEnv(log) {
+  log.section("Environment");
+  const block = `${MARK_BEGIN}\n# Managed by ~/agentrc/bin/sync.\n` +
+    "# OpenCode also scans ~/.claude/skills; the same skills already come from ~/.agents/skills.\n" +
+    `export OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1\n${MARK_END}\n`;
+  const text = existsSync(ZSHENV) ? readText(ZSHENV) : "";
+  if (!OPENCODE_HOMES.length) {
+    if (text.includes(MARK_BEGIN)) {
+      const rest = stripMarkedBlock(text).replace(/\n+$/, "");
+      writeFileSync(ZSHENV, rest ? rest + "\n" : "");
+      log.change(`${short(ZSHENV)}: removed OPENCODE_DISABLE_CLAUDE_CODE_SKILLS (OpenCode not installed)`);
+    }
+    return;
+  }
+  if (text.includes(block)) {
+    log.ok(`${short(ZSHENV)}: OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`);
+    return;
+  }
+  const rest = stripMarkedBlock(text).replace(/\n+$/, "");
+  writeFileSync(ZSHENV, (rest ? rest + "\n\n" : "") + block);
+  log.change(`${short(ZSHENV)}: OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 (open a new shell)`);
+}
 
-def claude_mcp_current(home: Path) -> dict:
-    return load_json(home / ".claude.json").get("mcpServers", {})
+function main() {
+  const log = new Log();
+  console.log(`agentrc sync${DRY ? " (dry run)" : ""}: ${short(REPO)}`);
+  reportHarnesses(log);
+  if (log.errors.length) {
+    console.log(`\nFix ${short(PROFILES_FILE)} first; nothing was changed.`);
+    return 1;
+  }
+  if (!syncSkills(log)) return 1;
+  syncInstructions(log);
+  if (!DRY) {
+    const state = loadState();
+    syncPolicy(log, state);
+    syncMcp(log, state);
+    syncEnv(log);
+    saveState(state);
+  }
+  console.log(`\n${log.errors.length} error(s), ${log.warnings.length} warning(s). Run bin/doctor to verify.`);
+  return log.errors.length ? 1 : 0;
+}
 
-
-def sync_mcp(log: Log, state: dict) -> None:
-    log.section("MCP servers (mcp.json)")
-    servers, skipped = mcp_servers(log)
-    previous = set(state.get("mcp", []))
-    removed = sorted(previous - set(servers) - set(skipped))
-
-    # Claude Code: through its CLI, so running sessions don't race a direct file write.
-    for home in CLAUDE_HOMES:
-        env = dict(os.environ, CLAUDE_CONFIG_DIR=str(home))
-        current = claude_mcp_current(home)
-        for name in removed:
-            if name in current:
-                subprocess.run([PROGRAMS["claude"], "mcp", "remove", "-s", "user", name], env=env, capture_output=True)
-                log.change(f"claude {short(home)}: removed {name}")
-        for name, spec in servers.items():
-            want = {"type": "http", "url": spec["url"], **({"headers": spec["headers"]} if spec["headers"] else {})}
-            have = current.get(name)
-            if have and {k: have.get(k) for k in want} == want:
-                continue
-            if have:
-                subprocess.run([PROGRAMS["claude"], "mcp", "remove", "-s", "user", name], env=env, capture_output=True)
-            cmd = [PROGRAMS["claude"], "mcp", "add", "-s", "user", "--transport", "http", name, spec["url"]]
-            for k, v in spec["headers"].items():
-                cmd += ["-H", f"{k}: {v}"]
-            r = subprocess.run(cmd, env=env, capture_output=True, text=True)
-            if r.returncode == 0:
-                log.change(f"claude {short(home)}: {name}")
-            else:
-                log.error(f"claude {short(home)}: adding {name} failed: {r.stderr.strip()[:200]}")
-        log.ok(f"claude {short(home)}: {', '.join(servers)}")
-
-    # Codex: one marked block in config.toml.
-    for home in CODEX_HOMES:
-        f = home / "config.toml"
-        text = f.read_text() if f.exists() else ""
-        body = strip_toml_tables(strip_marked_block(text), list(servers) + removed).rstrip("\n")
-        block = [MARK_BEGIN, "# MCP servers from ~/agentrc/mcp.json. Edit there, then run bin/sync."]
-        for name, spec in servers.items():
-            block += ["", f"[mcp_servers.{name}]", f"url = {toml_str(spec['url'])}"]
-            if spec["headers"]:
-                pairs = ", ".join(f"{toml_str(k)} = {toml_str(v)}" for k, v in spec["headers"].items())
-                block.append(f"http_headers = {{ {pairs} }}")
-        block.append(MARK_END)
-        new = body + "\n\n" + "\n".join(block) + "\n"
-        if new != text:
-            f.write_text(new)
-            log.change(f"{short(f)}: mcp_servers {', '.join(servers)}")
-        else:
-            log.ok(f"{short(f)}: {', '.join(servers)}")
-
-    # OpenCode
-    for home in OPENCODE_HOMES:
-        f = home / "opencode.json"
-        data = load_json(f)
-        mcp = data.setdefault("mcp", {})
-        before = json.dumps(mcp, sort_keys=True)
-        for name in removed:
-            mcp.pop(name, None)
-        for name, spec in servers.items():
-            entry = {"type": "remote", "url": spec["url"], "enabled": True}
-            if spec["headers"]:
-                entry["headers"] = spec["headers"]
-            mcp[name] = entry
-        if json.dumps(mcp, sort_keys=True) != before:
-            save_json(f, data)
-            log.change(f"{short(f)}: mcp {', '.join(servers)}")
-        else:
-            log.ok(f"{short(f)}: {', '.join(servers)}")
-
-    # Pi
-    for home in PI_HOMES:
-        f = home / "mcp.json"
-        data = load_json(f)
-        mcp = data.setdefault("mcpServers", {})
-        before = json.dumps(mcp, sort_keys=True)
-        for name in removed:
-            mcp.pop(name, None)
-        for name, spec in servers.items():
-            mcp[name] = {"url": spec["url"], **({"headers": spec["headers"]} if spec["headers"] else {})}
-        if json.dumps(mcp, sort_keys=True) != before:
-            save_json(f, data)
-            os.chmod(f, 0o600)
-            log.change(f"{short(f)}: mcpServers {', '.join(servers)}")
-        else:
-            log.ok(f"{short(f)}: {', '.join(servers)}")
-
-    state["mcp"] = sorted(set(servers) | (previous & set(skipped)))
-
-
-def sync_env(log: Log) -> None:
-    log.section("Environment")
-    block = (f"{MARK_BEGIN}\n# Managed by ~/agentrc/bin/sync.\n"
-             "# OpenCode also scans ~/.claude/skills; the same skills already come from ~/.agents/skills.\n"
-             f"export OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1\n{MARK_END}\n")
-    text = ZSHENV.read_text() if ZSHENV.exists() else ""
-    if not OPENCODE_HOMES:
-        if MARK_BEGIN in text:
-            rest = strip_marked_block(text).rstrip("\n")
-            ZSHENV.write_text(rest + "\n" if rest else "")
-            log.change(f"{short(ZSHENV)}: removed OPENCODE_DISABLE_CLAUDE_CODE_SKILLS (OpenCode not installed)")
-        return
-    if block in text:
-        log.ok(f"{short(ZSHENV)}: OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1")
-        return
-    new = strip_marked_block(text).rstrip("\n")
-    ZSHENV.write_text((new + "\n\n" if new else "") + block)
-    log.change(f"{short(ZSHENV)}: OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 (open a new shell)")
-
-
-def main() -> None:
-    log = Log()
-    print(f"agentrc sync{' (dry run)' if DRY else ''}: {short(REPO)}")
-    report_harnesses(log)
-    if log.errors:
-        print(f"\nFix {short(PROFILES_FILE)} first; nothing was changed.")
-        sys.exit(1)
-    sync_skills(log)
-    sync_instructions(log)
-    if not DRY:
-        state = load_state()
-        sync_policy(log, state)
-        sync_mcp(log, state)
-        sync_env(log)
-        save_state(state)
-    print(f"\n{len(log.errors)} error(s), {len(log.warnings)} warning(s). Run bin/doctor to verify.")
-    sys.exit(1 if log.errors else 0)
-
-
-if __name__ == "__main__":
-    main()
+process.exitCode = main();
