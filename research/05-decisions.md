@@ -96,3 +96,14 @@ MCP servers in doctor. Profiles moved to `profiles.json`, and doctor reads the
 Node 23.6+), and a hand-written TOML reader. The port was checked against the
 Python version on two scenarios (no harnesses; all four with existing config):
 identical output and identical files. `test/` keeps a smoke test for it.
+
+## D16. One review skill, named `review`
+Two review skills were tried blind on the same 13k-line PR (Opus 5.5, medium):
+addy's `code-review-and-quality` and a step-based rewrite. Each caught 3 of the
+7 findings a human-validated review had found, and both missed the same three:
+bugs between two code paths over time (a webhook racing an owner action, a
+planner skipping rows already in the target state, a limit change over existing
+records). The merged skill keeps addy's axes and structural remedies, takes the
+rewrite's steps and evidence levels, and adds a state-through-time pass, a
+coverage map for large changes and mutation per risk area. It is renamed
+`review`: `code-review` would clash with Claude's built-in (D4).

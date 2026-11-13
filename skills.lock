@@ -8,12 +8,12 @@ wayfinder                      mattpocock/skills        skills/engineering/wayfi
 research                       mattpocock/skills        skills/engineering/research                      5863806dd4e15c63174bee4e7515a4256792ecfa  -
 codebase-design                mattpocock/skills        skills/engineering/codebase-design               5863806dd4e15c63174bee4e7515a4256792ecfa  -
 improve-codebase-architecture  mattpocock/skills        skills/engineering/improve-codebase-architecture 5863806dd4e15c63174bee4e7515a4256792ecfa  -
-implement                      mattpocock/skills        skills/engineering/implement                     5863806dd4e15c63174bee4e7515a4256792ecfa  calls incremental-implementation for slicing; review step calls code-review-and-quality instead of code-review
-tdd                            mattpocock/skills        skills/engineering/tdd                           5863806dd4e15c63174bee4e7515a4256792ecfa  -
+implement                      mattpocock/skills        skills/engineering/implement                     5863806dd4e15c63174bee4e7515a4256792ecfa  calls incremental-implementation for slicing; review step calls review instead of code-review
+tdd                            mattpocock/skills        skills/engineering/tdd                           5863806dd4e15c63174bee4e7515a4256792ecfa  points at the `review` skill instead of `code-review`
 diagnosing-bugs                mattpocock/skills        skills/engineering/diagnosing-bugs               5863806dd4e15c63174bee4e7515a4256792ecfa  -
 handoff                        mattpocock/skills        skills/productivity/handoff                      5863806dd4e15c63174bee4e7515a4256792ecfa  -
 incremental-implementation     addyosmani/agent-skills  skills/incremental-implementation                301b02b12bff98e4688e6984af6556802322bbde  -
-code-review-and-quality        addyosmani/agent-skills  skills/code-review-and-quality                   301b02b12bff98e4688e6984af6556802322bbde  rewritten locally (do not --apply): step-based, evidence levels, coverage map, state-through-time pass, mutation per risk area, checklists moved to references/
+review                         addyosmani/agent-skills  skills/code-review-and-quality                   301b02b12bff98e4688e6984af6556802322bbde  rewritten locally (do not --apply): step-based, evidence levels, coverage map, state-through-time pass, mutation per risk area, checklists moved to references/
 file-pr                        t3dotgg/tstack           skills/file-pr                                   11e37a74d0a6868c121cd0910ab2b3bd9873b92a  rewritten: stops after filing (no babysit), asks before push, Bitbucket fallback, evidence + merge-danger sections from mattpocock pr, comment callout from leaving-pr-comments
 frontend-ui                    merged                   -                                                -    see skills/frontend-ui/NOTICE.md
 varlock                        dmno-dev/varlock         skills/varlock                                   f6cc5938b2aa5d45a21d4fb3498399fbb0c4054c  -

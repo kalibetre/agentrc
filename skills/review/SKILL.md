@@ -1,9 +1,9 @@
 ---
-name: code-review-and-quality
+name: review
 description: Reviews a code change for correctness, state and timing bugs, readability, architecture, security and performance, and reports evidence-backed findings with file, line and severity. Use before merging any change, after finishing an implementation, or when asked to review a diff, branch, PR or files, including a pasted diff. Works on code written by you, another agent or a human.
 ---
 
-# Code Review and Quality
+# Review
 
 Find the defects that would hurt after merge, prove each one, and give a
 verdict. Every change gets reviewed before merge.

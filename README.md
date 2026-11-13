@@ -28,7 +28,7 @@ the agent loads on its own when the work matches. A ticket usually goes like thi
    - `tdd` works test-first where there is a sensible seam.
    - It runs type checks and single tests as it goes, and the full suite once
      at the end.
-   - `code-review-and-quality` reviews the result.
+   - `review` reviews the result.
    - It commits to the current branch.
    - UI work also draws on `frontend-ui`, and `codebase-design` shapes module
      boundaries; both load on their own.
@@ -179,7 +179,7 @@ description, and you can still call them by name.
 | | `tdd` | model | Red-green-refactor with tests worth keeping | mattpocock |
 | | `diagnosing-bugs` | model | Reproduce, minimise, hypothesise, instrument, fix, add a regression test | mattpocock |
 | | `frontend-ui` | model | Production-quality, accessible React/Tailwind UI, with a review checklist | merged (see its `NOTICE.md`) |
-| Review & ship | `code-review-and-quality` | model | Reviews correctness, readability, architecture, security and performance | addyosmani |
+| Review & ship | `review` | model | Evidence-backed review: correctness, state and timing, architecture, security, performance | addyosmani (rewritten) |
 | | `file-pr` | user | Drafts a problem-first PR, shows it to you, pushes and files it after you say yes, then stops | tstack (rewritten) |
 | Session | `handoff` | user | Compacts the session into a document another session or harness can continue from | mattpocock |
 | Meta | `setup-repo` | user | Gives a repo its `AGENTS.md`, a one-line `CLAUDE.md` and `docs/agents/` (issue tracker, domain docs) | local |
