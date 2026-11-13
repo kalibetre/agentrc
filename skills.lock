@@ -16,7 +16,7 @@ incremental-implementation     addyosmani/agent-skills  skills/incremental-imple
 code-review-and-quality        addyosmani/agent-skills  skills/code-review-and-quality                   301b02b12bff98e4688e6984af6556802322bbde  -
 file-pr                        t3dotgg/tstack           skills/file-pr                                   11e37a74d0a6868c121cd0910ab2b3bd9873b92a  rewritten: stops after filing (no babysit), asks before push, Bitbucket fallback, evidence + merge-danger sections from mattpocock pr, comment callout from leaving-pr-comments
 frontend-ui                    merged                   -                                                -    see skills/frontend-ui/NOTICE.md
-varlock                        dmno-dev/varlock         skills/varlock                                   -    copied from the earlier npx-skills install (2026-09-15); commit unknown
-fizzy                          basecamp/fizzy-cli       skills/fizzy                                     -    copied from an earlier install; commit unknown, older than upstream c39a4ab
+varlock                        dmno-dev/varlock         skills/varlock                                   f6cc5938b2aa5d45a21d4fb3498399fbb0c4054c  -
+fizzy                          basecamp/fizzy-cli       skills/fizzy                                     c39a4ab95c65f3809ff0c7b24f22fcdeb6f520d1  -
 agentrc                        local                    -                                                -    references/ copied from mattpocock/skills writing-for-agents @ 5863806dd4e15c63174bee4e7515a4256792ecfa
 setup-repo                     local                    -                                                -    templates/ adapted from mattpocock/skills setup-matt-pocock-skills @ 5863806dd4e15c63174bee4e7515a4256792ecfa (triage removed, Jira added)
