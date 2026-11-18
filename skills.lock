@@ -20,3 +20,4 @@ varlock                        dmno-dev/varlock         skills/varlock          
 fizzy                          basecamp/fizzy-cli       skills/fizzy                                     c39a4ab95c65f3809ff0c7b24f22fcdeb6f520d1  -
 agentrc                        local                    -                                                -    references/ copied from mattpocock/skills writing-for-agents @ 5863806dd4e15c63174bee4e7515a4256792ecfa
 setup-repo                     local                    -                                                -    templates/ adapted from mattpocock/skills setup-matt-pocock-skills @ 5863806dd4e15c63174bee4e7515a4256792ecfa (triage removed, Jira added)
+jira-ticket-create             local                    -                                                -    downloaded from mcpmarket (v1.0.0, no upstream repo); added "Use when" triggers to description
